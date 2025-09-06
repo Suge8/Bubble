@@ -20,6 +20,8 @@
   "button.remove": "移除",
   "button.setDefault": "设为默认",
   "button.newWindow": "新页面",
+  "button.change": "更改…",
+  "button.save": "保存",
   "button.cancel": "取消",
   "label.default": "默认",
   "status.loading": "加载中…",

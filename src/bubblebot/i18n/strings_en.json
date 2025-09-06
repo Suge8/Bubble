@@ -20,6 +20,8 @@
   "button.remove": "Remove",
   "button.setDefault": "Set as Default",
   "button.newWindow": "New Window",
+  "button.change": "Change…",
+  "button.save": "Save",
   "button.cancel": "Cancel",
   "label.default": "Default",
   "status.loading": "Loading…",

@@ -20,6 +20,8 @@
   "button.remove": "削除",
   "button.setDefault": "デフォルトに設定",
   "button.newWindow": "新しいウィンドウ",
+  "button.change": "変更…",
+  "button.save": "保存",
   "button.cancel": "キャンセル",
   "label.default": "デフォルト",
   "status.loading": "読み込み中…",

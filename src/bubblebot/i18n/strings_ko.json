@@ -20,6 +20,8 @@
   "button.remove": "제거",
   "button.setDefault": "기본값으로 설정",
   "button.newWindow": "새 창",
+  "button.change": "변경…",
+  "button.save": "저장",
   "button.cancel": "취소",
   "label.default": "기본",
   "status.loading": "불러오는 중…",

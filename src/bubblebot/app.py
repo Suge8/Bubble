@@ -410,6 +410,13 @@ class AppDelegate(NSObject):
                 self.navigation_controller.on_language_changed()
         except Exception:
             pass
+        # Refresh settings window labels if open
+        try:
+            if hasattr(self, '_settings_window') and self._settings_window:
+                if hasattr(self._settings_window, '_apply_localization'):
+                    self._settings_window._apply_localization()
+        except Exception:
+            pass
 
     def _i18n_or_default(self, key, default_text, **kwargs):
         try:

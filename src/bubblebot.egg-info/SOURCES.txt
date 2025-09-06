@@ -15,12 +15,14 @@ src/bubblebot.egg-info/dependency_links.txt
 src/bubblebot.egg-info/entry_points.txt
 src/bubblebot.egg-info/requires.txt
 src/bubblebot.egg-info/top_level.txt
+src/bubblebot/about/version.txt
 src/bubblebot/components/__init__.py
 src/bubblebot/components/config_manager.py
 src/bubblebot/components/homepage_manager.py
 src/bubblebot/components/multiwindow_manager.py
 src/bubblebot/components/navigation_controller.py
 src/bubblebot/components/platform_manager.py
+src/bubblebot/components/settings_window.py
 src/bubblebot/i18n/__init__.py
 src/bubblebot/i18n/strings_en.json
 src/bubblebot/i18n/strings_fr.json

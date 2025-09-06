@@ -33,7 +33,7 @@
   - 新建页面默认常驻，保证多窗口可同时对话；当窗口数>5 时，在右上角显示小气泡提示“窗口过多可能占用内存”，支持关闭/不再提示；≤5 正常。
   - Purpose: 多窗口并行与友好提示。
 
-- [ ] 2.1 新建设置窗口（语言 + 开机启动 + 快捷键 + 清除缓存）
+- [x] 2.1 新建设置窗口（语言 + 开机启动 + 快捷键 + 清除缓存）
   - Files: src/bubblebot/components/settings_window.py (new)
   - NSWindow：语言下拉（中文/English/日本語/한국어/Français）、“开机启动”复选框、当前快捷键显示与更改、“清除浏览器缓存”按钮；保存/取消；保存后即时生效并持久化。
   - Purpose: 集中设置入口。
@@ -43,13 +43,13 @@
   - 与主页一致的丰富动效（淡入/缩放/悬停/按压/焦点过渡）、卡片阴影圆角、深浅色自适应，标题含 logo。
   - Purpose: 统一美学与动效体验。
 
-- [ ] 2.3 状态栏菜单精简（三项 + 动态快捷键提示）
+- [x] 2.3 状态栏菜单精简（三项 + 动态快捷键提示）
   - File: src/bubblebot/app.py
   - 仅包含：1) 不可点击的提示项：“Press {⌘+G…} to Show/Hide”（本地化，动态刷新）；2) Settings…；3) Quit。
   - 移除：Show/Hide、Home、Set New Trigger、Clear Web Cache（迁入设置）。
   - Purpose: 菜单极简。
 
-- [ ] 2.4 将“设置快捷键”迁入设置窗口
+- [x] 2.4 将“设置快捷键”迁入设置窗口
   - Files: src/bubblebot/listener.py, src/bubblebot/components/settings_window.py
   - 捕获新组合键、冲突/非法提示、保存到既有路径。
   - Purpose: 集中配置入口。

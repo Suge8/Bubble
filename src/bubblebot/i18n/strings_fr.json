@@ -20,6 +20,8 @@
   "button.remove": "Supprimer",
   "button.setDefault": "Définir par défaut",
   "button.newWindow": "Nouvelle fenêtre",
+  "button.change": "Modifier…",
+  "button.save": "Enregistrer",
   "button.cancel": "Annuler",
   "label.default": "Par défaut",
   "status.loading": "Chargement…",

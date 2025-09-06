@@ -117,8 +117,7 @@ class SettingsWindow(NSObject):
         # Hotkey
         self.hotkey_label = add_label(_t('settings.hotkey'), 20, bounds.size.height - 160, 80, 20)
         self.hotkey_value = add_label("", 110, bounds.size.height - 160, 160, 20)
-        self.hotkey_button = add_button(_t('button.setDefault'), 280, bounds.size.height - 164, 120, 28)
-        self.hotkey_button.setTitle_("Change…")
+        self.hotkey_button = add_button(_t('button.change'), 280, bounds.size.height - 164, 120, 28)
         self.hotkey_button.setTarget_(self)
         self.hotkey_button.setAction_("changeHotkey:")
 
@@ -128,10 +127,10 @@ class SettingsWindow(NSObject):
         self.clear_cache_button.setAction_("clearCache:")
 
         # Save / Cancel
-        self.save_button = add_button("Save", bounds.size.width - 190, 20, 80, 30)
+        self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", bounds.size.width - 190, 20, 80, 30)
         self.save_button.setTarget_(self)
         self.save_button.setAction_("saveSettings:")
-        self.cancel_button = add_button("Cancel", bounds.size.width - 100, 20, 80, 30)
+        self.cancel_button = add_button(_t('button.cancel'), bounds.size.width - 100, 20, 80, 30)
         self.cancel_button.setTarget_(self)
         self.cancel_button.setAction_("cancelSettings:")
 
@@ -175,9 +174,9 @@ class SettingsWindow(NSObject):
         if self.clear_cache_button:
             self.clear_cache_button.setTitle_(_t('settings.clearCache'))
         if self.save_button:
-            self.save_button.setTitle_("Save")
+            self.save_button.setTitle_(_t('button.save'))
         if self.cancel_button:
-            self.cancel_button.setTitle_("Cancel")
+            self.cancel_button.setTitle_(_t('button.cancel'))
 
     # Public API
     def show(self):
@@ -258,4 +257,3 @@ class SettingsWindow(NSObject):
                 self.hotkey_value.setStringValue_(fmt())
         except Exception:
             pass
-
