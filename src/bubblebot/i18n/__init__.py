@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any, Dict, Optional
+import pkgutil
 
 _CURRENT_LANG = "en"
 _TRANSLATIONS: Dict[str, Dict[str, Any]] = {}
@@ -31,15 +32,28 @@ def _normalize_lang(code: Optional[str]) -> str:
 
 
 def _load_lang(code: str) -> Dict[str, Any]:
-    path = os.path.join(_BASE_DIR, f"strings_{code}.json")
-    if not os.path.exists(path):
-        return {}
+    """Load translations for a language.
+
+    Zip-safe: first try pkgutil.get_data (works in py2app bundles where files
+    are inside python313.zip). Fallback to file path during dev runs.
+    """
+    # 1) Zip-safe import from package data
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        data = pkgutil.get_data(__package__ or 'bubblebot.i18n', f"strings_{code}.json")
+        if data:
+            return json.loads(data.decode("utf-8"))
+    except Exception:
+        pass
+
+    # 2) File path fallback (source tree / editable installs)
+    path = os.path.join(_BASE_DIR, f"strings_{code}.json")
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
     except Exception as e:
         print(f"WARNING[i18n]: Failed to load language '{code}': {e}")
-        return {}
+    return {}
 
 
 def load_translations() -> None:

@@ -1484,6 +1484,9 @@ class AppDelegate(NSObject):
                 self.menu_quit_item.setTitle_(self._i18n_or_default('menu.quit', 'Quit'))
         except Exception:
             pass
+        # Heavy initialization (observers, event tap) should run only once.
+        if getattr(self, '_status_menu_initialized', False):
+            return
         # Add resize observer（用于自适应顶部栏与选择器位置）
         NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
             self, 'windowDidResize:', NSWindowDidResizeNotification, self.window
@@ -1576,6 +1579,8 @@ class AppDelegate(NSObject):
         
         # 不再使用退出轮询/激活保活，避免干扰交互
         self.activation_timer = None
+        # Mark initialized to avoid repeating heavy setup on subsequent refreshes
+        self._status_menu_initialized = True
 
     # Logic to show the overlay, make it the key window, and focus on the typing area.
     def showWindow_(self, sender):

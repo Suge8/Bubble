@@ -12,6 +12,7 @@ Provides:
 from __future__ import annotations
 
 import objc
+import os
 from typing import Optional
 from AppKit import (
     NSApp,
@@ -153,13 +154,20 @@ class SettingsWindow(NSObject):
 
         # Background blur (unified with app aesthetic)
         try:
+            if os.environ.get('BB_NO_EFFECTS') == '1':
+                raise Exception('effects disabled by env')
             self.bg_blur = NSVisualEffectView.alloc().initWithFrame_(bounds)
             self.bg_blur.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
-            self.bg_blur.setMaterial_(NSVisualEffectMaterialHUDWindow)
+            try:
+                material = self._preferred_material()
+                self.bg_blur.setMaterial_(material)
+            except Exception:
+                pass
             self.bg_blur.setState_(NSVisualEffectStateActive)
             # autoresize with window
             self.bg_blur.setAutoresizingMask_((1 << 1) | (1 << 4))  # width + height sizable
-            content.addSubview_positioned_relativeTo_(self.bg_blur, 0, None)
+            # Add first to be behind
+            content.addSubview_(self.bg_blur)
         except Exception:
             self.bg_blur = None
 
@@ -333,23 +341,18 @@ class SettingsWindow(NSObject):
         self._apply_localization()
         self._load_values_into_ui()
         self.window.center()
-        # Polished animated presentation (fade + slight slide)
+        # Polished animated presentation (fade only; safer across macOS versions)
         try:
-            frame = self.window.frame()
-            start_frame = NSMakeRect(frame.origin.x, frame.origin.y - 12, frame.size.width, frame.size.height)
-            # Set initial state
+            if os.environ.get('BB_NO_EFFECTS') == '1':
+                raise Exception('effects disabled by env')
             self.window.setAlphaValue_(0.0)
-            self.window.setFrame_display_animate_(start_frame, True, False)
             self.window.makeKeyAndOrderFront_(None)
             NSApp.activateIgnoringOtherApps_(True)
-            # Animate to final frame and full alpha
             NSAnimationContext.beginGrouping()
             NSAnimationContext.currentContext().setDuration_(0.18)
             self.window.animator().setAlphaValue_(1.0)
-            self.window.setFrame_display_animate_(frame, True, True)
             NSAnimationContext.endGrouping()
         except Exception:
-            # Fallback without animation
             self.window.makeKeyAndOrderFront_(None)
             try:
                 NSApp.activateIgnoringOtherApps_(True)
@@ -425,7 +428,7 @@ class SettingsWindow(NSObject):
     def _dismiss(self, animated=True):
         if not self.window:
             return
-        if not animated:
+        if not animated or os.environ.get('BB_NO_EFFECTS') == '1':
             self.window.orderOut_(None)
             return
         try:
@@ -494,3 +497,20 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
         return None
+
+    def _preferred_material(self):
+        # Try a few materials in order of preference; return the first that exists
+        candidates = [
+            'NSVisualEffectMaterialHUDWindow',
+            'NSVisualEffectMaterialPopover',
+            'NSVisualEffectMaterialSidebar',
+            'NSVisualEffectMaterialWindowBackground',
+            'NSVisualEffectMaterialAppearanceBased',
+        ]
+        for name in candidates:
+            try:
+                return getattr(__import__('AppKit', fromlist=[name]), name)
+            except Exception:
+                continue
+        # Fallback to an int (AppearanceBased is 0 on some SDKs)
+        return 0

@@ -119,20 +119,34 @@ class HomepageManager(NSObject):
 
     def _load_logo_data_url(self):
         import base64
+        import pkgutil
+        # Try pkg data first (py2app zip-safe)
+        for name in (
+            'logo/icon.iconset/icon_64x64.png',
+            'logo/icon.iconset/icon_128x128.png',
+            'logo/icon.iconset/icon_32x32.png',
+        ):
+            try:
+                data = pkgutil.get_data('bubblebot', name)
+                if data:
+                    b64 = base64.b64encode(data).decode('ascii')
+                    self.logo_data_url = f"data:image/png;base64,{b64}"
+                    return
+            except Exception:
+                pass
+        # Fallback to filesystem in dev
         base = os.path.dirname(os.path.abspath(__file__))
-        # 优先较小尺寸
-        candidates = [
+        for p in (
             os.path.join(base, 'logo', 'icon.iconset', 'icon_64x64.png'),
             os.path.join(base, 'logo', 'icon.iconset', 'icon_128x128.png'),
             os.path.join(base, 'logo', 'icon.iconset', 'icon_32x32.png'),
-        ]
-        path = next((p for p in candidates if os.path.exists(p)), None)
-        if not path:
-            self.logo_data_url = None
-            return
-        with open(path, 'rb') as f:
-            b64 = base64.b64encode(f.read()).decode('ascii')
-        self.logo_data_url = f"data:image/png;base64,{b64}"
+        ):
+            if os.path.exists(p):
+                with open(p, 'rb') as f:
+                    b64 = base64.b64encode(f.read()).decode('ascii')
+                self.logo_data_url = f"data:image/png;base64,{b64}"
+                return
+        self.logo_data_url = None
     
     def _ensure_config_directory(self):
         """确保配置目录存在"""
