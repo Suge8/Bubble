@@ -38,7 +38,7 @@
   - NSWindow：语言下拉（中文/English/日本語/한국어/Français）、“开机启动”复选框、当前快捷键显示与更改、“清除浏览器缓存”按钮；保存/取消；保存后即时生效并持久化。
   - Purpose: 集中设置入口。
 
-- [ ] 2.2 设置窗口视觉与动效（Vercel 风格 + 丰富动画）
+- [x] 2.2 设置窗口视觉与动效（Vercel 风格 + 丰富动画）
   - Files: src/bubblebot/components/settings_window.py, src/bubblebot/logo/*
   - 与主页一致的丰富动效（淡入/缩放/悬停/按压/焦点过渡）、卡片阴影圆角、深浅色自适应，标题含 logo。
   - Purpose: 统一美学与动效体验。

@@ -735,11 +735,15 @@ class AppDelegate(NSObject):
         # Check for accessibility permissions (简化版本，不阻塞)
         print("DEBUG: 检查辅助功能权限...")
         if AXIsProcessTrustedWithOptions is not None:
-            # 不显示权限请求对话框，只检查状态
-            is_trusted = AXIsProcessTrustedWithOptions({})
+            # 不显示权限请求对话框，只检查状态（传 None 更安全，避免桥接空 dict 崩溃）
+            try:
+                is_trusted = AXIsProcessTrustedWithOptions(None)
+            except Exception as e:
+                print(f"WARNING: AXIsProcessTrustedWithOptions 检查失败：{e}")
+                is_trusted = False
             if not is_trusted:
                 print("WARNING: 辅助功能权限未授予，某些功能可能受限")
-                print("请在系统设置 > 隐私与安全性 > 辅助功能 中添加 Terminal 并启用")
+                print("请在系统设置 > 隐私与安全性 > 辅助功能 中添加 Bubble 并启用")
             else:
                 print("DEBUG: 辅助功能权限已授予")
         else:
