@@ -39,6 +39,12 @@ src/bubblebot.egg-info/
 .aim/
 .claude/
 .spec-workflow/
+AGENTS.md
+
+#############################################
+# Local-only tests
+#############################################
+/tests/
 
 #############################################
 # macOS & temporary files

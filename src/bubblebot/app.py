@@ -345,6 +345,10 @@ class AppDelegate(NSObject):
         self.navigation_controller = None
         self.platform_manager = None
         self.exit_check_timer = None  # 退出检查定时器
+        # 单窗口多页面：同一 NSWindow 内持有多个后台 WKWebView
+        self._pages_map = {}
+        self._page_meta = {}
+        self._active_page_id = None
 
         # 多窗口管理器支持
         self.multiwindow_manager = None
@@ -374,6 +378,8 @@ class AppDelegate(NSObject):
         self._skeleton_suppress_next = False
         # 抑制直到完成（用于整个主页加载生命周期，避免双事件触发闪烁）
         self._skeleton_suppress_until_finish = False
+        # 活动 Toast 引用，便于覆盖/移除
+        self._active_toast = None
         return self
 
     # -------- Language: initial apply and runtime changes --------
@@ -438,45 +444,136 @@ class AppDelegate(NSObject):
 
     # -------- Toast（页面阈值） --------
     def show_toast(self, text: str, duration: float = 3.0):
-        """在顶栏区域显示轻量 Toast，自动消失。"""
+        """在当前窗口右上角显示轻量 Toast（内联实现）。"""
+        try:
+            return self._inline_toast(text, duration)
+        except Exception:
+            pass
         try:
             from .components.utils.toast_manager import ToastManager
-            # 选择可见容器并始终将 toast 提到最上层
+        except Exception as e:
+            print(f"WARNING: 导入 ToastManager 失败: {e}")
+            return
+        # 选择父视图
+        parent = None
+        try:
+            if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
+                nsw = getattr(self.multiwindow_manager, 'active_ns_window', None)
+                if nsw is None:
+                    try:
+                        vals = list(getattr(self.multiwindow_manager, 'ns_windows', {}).values())
+                        nsw = vals[0] if vals else None
+                    except Exception:
+                        nsw = None
+                if nsw is not None:
+                    parent = nsw.contentView()
+        except Exception:
             parent = None
+        if parent is None:
+            parent = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
+        if parent is None:
+            return
+        # 参考 top_bar，确保置顶
+        try:
+            rel = self.top_bar if getattr(self, 'top_bar', None) is not None else None
+        except Exception:
             rel = None
-            # 多窗口：使用活动窗口 contentView
+        try:
+            print(f"DEBUG: show_toast parent={parent} homepage={bool(getattr(self,'last_loaded_is_homepage',False))} multi={bool(getattr(self,'is_multiwindow_mode',False))}")
+        except Exception:
+            pass
+        try:
+            # 为确保可见性，首页统一采用内嵌模式（与设置页一致）。
+            # 多窗口模式优先使用 active_ns_window；只有当 parent 为空时，才尝试使用 keyWindow/任意窗口。
+            if parent is None:
+                try:
+                    from AppKit import NSApp
+                    kw = NSApp.keyWindow() if NSApp else None
+                    if kw is not None and hasattr(kw, 'contentView') and kw.contentView() is not None:
+                        parent = kw.contentView()
+                    elif NSApp and hasattr(NSApp, 'windows'):
+                        wins = list(NSApp.windows())
+                        if wins:
+                            try:
+                                parent = wins[0].contentView() or parent
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            ToastManager.show(
+                text=str(text) if text is not None else "",
+                parent=parent,
+                duration=float(duration or 3.0),
+                relative_to=rel,
+                position='top-right',
+                use_panel=False,
+            )
+            # 兜底：在多窗口模式下，同时向活动 WKWebView 注入一个页面内 toast，确保可见
             try:
                 if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
-                    nsw = getattr(self.multiwindow_manager, 'active_ns_window', None)
-                    if nsw is None:
+                    mw = self.multiwindow_manager
+                    wid = None
+                    try:
+                        wid = mw.get_active_window_id()
+                    except Exception:
+                        wid = None
+                    wv = None
+                    try:
+                        wv = mw.webviews.get(wid) if wid and hasattr(mw, 'webviews') else None
+                    except Exception:
+                        wv = None
+                    if wv is not None:
+                        msg = str(text) if text is not None else ""
+                        # 简单转义
+                        js_msg = msg.replace('\\', r'\\').replace('"', r'\"')
+                        js = f"""
+                        (function() {{
+                          try {{
+                            var id = 'bb-toast-overlay';
+                            var el = document.getElementById(id);
+                            if (!el) {{
+                              el = document.createElement('div');
+                              el.id = id;
+                              el.style.position = 'fixed';
+                              el.style.top = '12px';
+                              el.style.right = '12px';
+                              el.style.zIndex = '2147483647';
+                              el.style.padding = '10px 14px';
+                              el.style.borderRadius = '8px';
+                              el.style.background = 'rgba(0,0,0,0.92)';
+                              el.style.color = '#fff';
+                              el.style.font = '13px -apple-system, system-ui, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif';
+                              el.style.pointerEvents = 'none';
+                              document.body.appendChild(el);
+                            }}
+                            el.textContent = "{js_msg}";
+                            el.style.opacity = '1';
+                            el.style.transition = 'opacity .18s';
+                            setTimeout(function() {{ el.style.opacity = '0'; setTimeout(function() {{ if (el && el.parentNode) el.parentNode.removeChild(el); }}, 300); }}, {int(max(1, min(10, int(duration or 3.0))))} * 1000);
+                          }} catch(e) {{ /* ignore */ }}
+                        }})();
+                        """
                         try:
-                            vals = list(getattr(self.multiwindow_manager, 'ns_windows', {}).values())
-                            nsw = vals[0] if vals else None
+                            wv.evaluateJavaScript_completionHandler_(js, None)
+                            print("DEBUG: injected in-webview toast")
                         except Exception:
-                            nsw = None
-                    if nsw is not None:
-                        parent = nsw.contentView()
-            except Exception:
-                parent = None
-            # 非多窗口：使用根视图/主窗口 contentView
-            if parent is None:
-                parent = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
-            # Prefer stacking above the top bar to guarantee visibility
-            try:
-                rel = self.top_bar if getattr(self, 'top_bar', None) is not None else None
-            except Exception:
-                rel = None
-            # 记录调试信息（仅 BB_DEBUG=1 时输出）
-            try:
-                print(f"DEBUG: show_toast parent={parent} homepage={bool(getattr(self,'last_loaded_is_homepage',False))} multi={bool(getattr(self,'is_multiwindow_mode',False))}")
+                            pass
             except Exception:
                 pass
-            if parent is None:
-                return
-            # 让 Toast 永远浮在最上层（相对 top_bar 置顶，确保不被覆盖）
-            ToastManager.show(text=text, parent=parent, duration=duration, relative_to=rel)
         except Exception as e:
             print(f"WARNING: show_toast 失败: {e}")
+
+    def dismissToast_(self, timer):
+        try:
+            toast = timer.userInfo()
+            if os.environ.get('BB_NO_EFFECTS') != '1':
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.currentContext().setDuration_(0.18)
+                toast.animator().setAlphaValue_(0.0)
+                NSAnimationContext.endGrouping()
+            toast.removeFromSuperview()
+        except Exception:
+            pass
 
     def _maybe_show_page_threshold_toast(self, old: int, new: int):
         try:
@@ -484,7 +581,7 @@ class AppDelegate(NSObject):
             # 之后减少到 <=5 再次跨过 >5 时再次提示。
             if int(old) <= 5 and int(new) > 5:
                 msg = self._i18n_or_default('toast.tooManyPages', '页面较多可能占用内存导致卡顿')
-                self.show_toast(msg, duration=3.0)
+                self._inline_toast(msg, duration=3.0)
             try:
                 print(f"DEBUG: page_threshold_check old={old} new={new} trigger={int(old)<=5 and int(new)>5}")
             except Exception:
@@ -495,6 +592,80 @@ class AppDelegate(NSObject):
     def notify_page_count_changed(self, old: int, new: int):
         """供多窗口管理器回调：页面计数变化时的处理。"""
         self._maybe_show_page_threshold_toast(old, new)
+
+    # 简单内联 Toast（与设置页一致）
+    def _inline_toast(self, text: str, duration: float = 3.0):
+        parent = None
+        try:
+            if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
+                nsw = getattr(self.multiwindow_manager, 'active_ns_window', None)
+                if nsw is None:
+                    try:
+                        vals = list(getattr(self.multiwindow_manager, 'ns_windows', {}).values())
+                        nsw = vals[0] if vals else None
+                    except Exception:
+                        nsw = None
+                if nsw is not None:
+                    parent = nsw.contentView()
+        except Exception:
+            parent = None
+        if parent is None:
+            parent = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
+        if parent is None:
+            return
+        try:
+            bounds = parent.bounds()
+            tw, th = 260, 36
+            margin = 16
+            tx = max(margin, bounds.size.width - tw - margin)
+            ty = max(margin, bounds.size.height - th - margin)
+            toast = NSView.alloc().initWithFrame_(NSMakeRect(tx, ty, tw, th))
+            toast.setWantsLayer_(True)
+            toast.layer().setCornerRadius_(8.0)
+            toast.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.92).CGColor())
+            lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(12, 8, tw - 24, th - 16))
+            lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
+            try:
+                lbl.setTextColor_(NSColor.whiteColor())
+            except Exception:
+                pass
+            try:
+                lbl.setFont_(NSFont.systemFontOfSize_(13))
+            except Exception:
+                pass
+            lbl.setStringValue_(str(text) if text is not None else "")
+            toast.addSubview_(lbl)
+            toast.setAlphaValue_(0.0)
+            try:
+                subs = list(parent.subviews())
+                anchor = subs[-1] if subs else None
+                if hasattr(parent, 'addSubview_positioned_relativeTo_'):
+                    parent.addSubview_positioned_relativeTo_(toast, NSWindowAbove, anchor)
+                else:
+                    parent.addSubview_(toast)
+            except Exception:
+                parent.addSubview_(toast)
+            try:
+                if os.environ.get('BB_NO_EFFECTS') != '1':
+                    NSAnimationContext.beginGrouping()
+                    NSAnimationContext.currentContext().setDuration_(0.18)
+                    toast.animator().setAlphaValue_(1.0)
+                    NSAnimationContext.endGrouping()
+                else:
+                    toast.setAlphaValue_(1.0)
+            except Exception:
+                toast.setAlphaValue_(1.0)
+            try:
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    float(duration or 3.0), self, 'dismissToast:', toast, False
+                )
+            except Exception:
+                try:
+                    toast.removeFromSuperview()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # -------- One-time notice bubble (e.g., config migration) --------
     def _ensure_notice_bubble(self):
@@ -582,6 +753,16 @@ class AppDelegate(NSObject):
             # 注册页面计数变化回调，用于阈值 Toast
             if hasattr(self.multiwindow_manager, 'on_page_count_changed'):
                 self.multiwindow_manager.on_page_count_changed = self.notify_page_count_changed
+            # 同步窗口开关事件到主页与下拉
+            if hasattr(self.multiwindow_manager, 'on_window_opened'):
+                self.multiwindow_manager.on_window_opened = self._on_multiwin_opened
+            if hasattr(self.multiwindow_manager, 'on_window_closed'):
+                self.multiwindow_manager.on_window_closed = self._on_multiwin_closed
+        except Exception:
+            pass
+        # 默认启用多窗口模式，保障切换不重载
+        try:
+            self.enable_multiwindow_mode()
         except Exception:
             pass
         # 当设置多窗口管理器时，更新AI选择器（只有在已初始化的情况下）
@@ -1870,12 +2051,32 @@ class AppDelegate(NSObject):
                 action = data.get("action") if isinstance(data, dict) else None
                 platform_id = data.get("platformId") if isinstance(data, dict) else None
                 if action == "openAI" and self.navigation_controller:
-                    # 优先打开该平台已存在的最新窗口；若无则创建一个
+                    if self.is_multiwindow_mode:
+                        # 单窗口多页面：切换到该平台最近使用的页面，无则创建并显示
+                        try:
+                            ordered = sorted(
+                                [(wid, meta) for wid, meta in self._page_meta.items() if meta.get('platform_id') == platform_id],
+                                key=lambda kv: kv[1].get('created_at') or 0
+                            )
+                        except Exception:
+                            ordered = []
+                        target_id = ordered[-1][0] if ordered else None
+                        if target_id:
+                            self._pages_switch(target_id)
+                        else:
+                            wid = self._pages_create(platform_id, background=False)
+                            if wid:
+                                self._pages_switch(wid)
+                        try:
+                            self._populate_ai_selector()
+                        except Exception:
+                            pass
+                        return
+                    # 单窗口模式：保持原行为
                     target_window_id = None
                     try:
                         win_map = self.homepage_manager.get_platform_windows(platform_id)
                         if win_map:
-                            # 取最近创建的一个
                             items = list(win_map.items())
                             try:
                                 items.sort(key=lambda kv: kv[1].get('createdAt', ''))
@@ -1883,7 +2084,6 @@ class AppDelegate(NSObject):
                                 pass
                             target_window_id = items[-1][0]
                         else:
-                            # 无实例则创建
                             from uuid import uuid4
                             if self.homepage_manager.can_add_window():
                                 old_cnt = 0
@@ -1901,12 +2101,9 @@ class AppDelegate(NSObject):
                                 target_window_id = new_id
                     except Exception:
                         pass
-                    # 导航并加载
                     self.navigation_controller.handle_ai_selector_change(platform_id, target_window_id)
                     self._load_ai_service(platform_id)
-                    # 同步下拉并选中对应项
                     self._populate_ai_selector()
-                    # 选中对应项
                     try:
                         for i in range(self.ai_selector.numberOfItems()):
                             rep = self.ai_selector_map.get(i) if hasattr(self, 'ai_selector_map') else None
@@ -1915,7 +2112,6 @@ class AppDelegate(NSObject):
                                 break
                     except Exception:
                         pass
-                    # 显示返回按钮
                     self.update_back_button_visibility(True)
                     return
                 if action == "setDefault" and self.homepage_manager:
@@ -1937,15 +2133,30 @@ class AppDelegate(NSObject):
                         pass
                     return
                 if action == "addPlatform" and self.homepage_manager:
-                    # 启用平台，并在首次启用时自动创建第1个页面
+                    # 启用平台：多页面模式下首次高亮即创建第1个后台页面
                     self.homepage_manager.add_platform(platform_id)
-                    # 统计旧/新总数，用于阈值提示
+                    if self.is_multiwindow_mode:
+                        try:
+                            # 若该平台尚无页面，则后台创建一个
+                            exists = any((meta.get('platform_id') == platform_id) for meta in self._page_meta.values())
+                            if not exists:
+                                self._pages_create(platform_id, background=True)
+                        except Exception:
+                            pass
+                        # 同步主页行与下拉
+                        self._update_homepage_platform_active(platform_id, True)
+                        self._update_homepage_window_count(platform_id)
+                        try:
+                            self._populate_ai_selector(include_home_first=True)
+                        except Exception:
+                            pass
+                        return
+                    # 非多页面模式：保持旧逻辑，自动创建一个页面记录
                     try:
                         old_cnt = int(self.homepage_manager.get_total_window_count())
                     except Exception:
                         old_cnt = 0
                     try:
-                        # 若当前该平台无页面，则自动新增1个初始页面
                         cur_map = self.homepage_manager.get_platform_windows(platform_id) or {}
                         if not cur_map:
                             from uuid import uuid4
@@ -1953,14 +2164,12 @@ class AppDelegate(NSObject):
                             self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
                     except Exception:
                         pass
-                    # 无刷新更新行状态与气泡 + 下拉实时同步
                     self._update_homepage_platform_active(platform_id, True)
                     self._update_homepage_window_count(platform_id)
                     try:
                         self._set_ai_selector_to_home()
                     except Exception:
                         pass
-                    # 阈值提示（如 4 -> 5）
                     try:
                         new_cnt = int(self.homepage_manager.get_total_window_count())
                     except Exception:
@@ -1971,62 +2180,62 @@ class AppDelegate(NSObject):
                         pass
                     return
                 if action == "addWindow" and self.homepage_manager:
-                    # 为平台新增页面实例（默认常驻；超过5个将提示内存警告气泡）
-                    from uuid import uuid4
-                    new_id = str(uuid4())
-                    # 统计旧/新总数，统一走 notify 回调逻辑
-                    try:
-                        old_cnt = int(self.homepage_manager.get_total_window_count())
-                    except Exception:
-                        old_cnt = 0
-                    # 平台维度计数（提升主页体验：单平台达到5个也提示）
-                    try:
-                        _platform_before = self.homepage_manager.get_platform_windows(platform_id) or {}
-                        old_platform_cnt = int(len(_platform_before))
-                    except Exception:
-                        old_platform_cnt = 0
-                    ok = self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
-                    if ok:
-                        # 无刷新更新主页行的窗口气泡 + 下拉实时同步
-                        self._update_homepage_window_count(platform_id)
-                        try:
-                            self._set_ai_selector_to_home()
-                        except Exception:
-                            pass
-                        try:
-                            new_cnt = int(self.homepage_manager.get_total_window_count())
-                        except Exception:
-                            new_cnt = old_cnt
-                        # 统一用回调入口（根据全局总数从 <=5 -> >5 时提示）
-                        try:
-                            self.notify_page_count_changed(old_cnt, new_cnt)
-                        except Exception:
-                            pass
-                    return
-                if action == "removeWindow" and self.homepage_manager:
-                    wid = data.get('windowId') if isinstance(data, dict) else None
-                    if platform_id and wid:
+                    # 新增页面：单窗口多页面后台创建并加载（不前置）
+                    if self.is_multiwindow_mode:
+                        self._pages_create(platform_id, background=True)
+                    else:
+                        from uuid import uuid4
+                        new_id = str(uuid4())
                         try:
                             old_cnt = int(self.homepage_manager.get_total_window_count())
                         except Exception:
                             old_cnt = 0
-                        ok = self.homepage_manager.remove_platform_window(platform_id, wid)
+                        try:
+                            _platform_before = self.homepage_manager.get_platform_windows(platform_id) or {}
+                            old_platform_cnt = int(len(_platform_before))
+                        except Exception:
+                            old_platform_cnt = 0
+                        ok = self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
                         if ok:
-                            # 无刷新更新主页行的窗口气泡 + 下拉实时同步
                             self._update_homepage_window_count(platform_id)
                             try:
                                 self._set_ai_selector_to_home()
                             except Exception:
                                 pass
                             try:
-                                new_cnt = max(0, int(self.homepage_manager.get_total_window_count()))
+                                new_cnt = int(self.homepage_manager.get_total_window_count())
                             except Exception:
                                 new_cnt = old_cnt
-                            # 统一回调入口（通常不会提示，仅为状态同步）
                             try:
                                 self.notify_page_count_changed(old_cnt, new_cnt)
                             except Exception:
                                 pass
+                    return
+                if action == "removeWindow" and self.homepage_manager:
+                    wid = data.get('windowId') if isinstance(data, dict) else None
+                    if platform_id and wid:
+                        if self.is_multiwindow_mode:
+                            self._pages_close(wid)
+                        else:
+                            try:
+                                old_cnt = int(self.homepage_manager.get_total_window_count())
+                            except Exception:
+                                old_cnt = 0
+                            ok = self.homepage_manager.remove_platform_window(platform_id, wid)
+                            if ok:
+                                self._update_homepage_window_count(platform_id)
+                                try:
+                                    self._set_ai_selector_to_home()
+                                except Exception:
+                                    pass
+                                try:
+                                    new_cnt = max(0, int(self.homepage_manager.get_total_window_count()))
+                                except Exception:
+                                    new_cnt = old_cnt
+                                try:
+                                    self.notify_page_count_changed(old_cnt, new_cnt)
+                                except Exception:
+                                    pass
                     return
 
             if name == "navigationAction":
@@ -2177,6 +2386,13 @@ class AppDelegate(NSObject):
             if self.webview:
                 # WebView 保持全高，顶栏悬浮其上
                 self.webview.setFrame_(NSMakeRect(0, 0, content_bounds.size.width, content_bounds.size.height))
+            # 调整单窗口多页面的 WebView 布局
+            try:
+                for _wid, _wv in list(getattr(self, '_pages_map', {}).items()):
+                    _wv.setFrame_(NSMakeRect(0, 0, content_bounds.size.width, content_bounds.size.height))
+                
+            except Exception:
+                pass
         except Exception as e:
             print(f"DEBUG: windowDidResize_ 异常: {e}")
 
@@ -2201,14 +2417,29 @@ class AppDelegate(NSObject):
         platform_id = entry.get('platform_id') if isinstance(entry, dict) else None
         window_id = entry.get('window_id') if isinstance(entry, dict) else None
 
-        if self.is_multiwindow_mode and self.multiwindow_manager:
+        if self.is_multiwindow_mode:
             if platform_id:
-                platform_windows = self.multiwindow_manager.get_platform_windows(platform_id)
-                if platform_windows:
-                    window_id = list(platform_windows.keys())[0]
-                    self.multiwindow_manager.switch_to_window(window_id)
+                # 单窗口多页面：实时切换到对应页面
+                if window_id and window_id in getattr(self, '_pages_map', {}):
+                    self._pages_switch(window_id)
+                    return
+                # 找到该平台已存在的页面
+                target = None
+                try:
+                    # 选取最早创建的第一个
+                    ordered = sorted(
+                        [(wid, meta) for wid, meta in self._page_meta.items() if meta.get('platform_id') == platform_id],
+                        key=lambda kv: kv[1].get('created_at') or 0
+                    )
+                    target = ordered[0][0] if ordered else None
+                except Exception:
+                    target = None
+                if target:
+                    self._pages_switch(target)
                 else:
-                    self.multiwindow_manager.createWindowForPlatform_(platform_id)
+                    wid = self._pages_create(platform_id, background=False)
+                    if wid:
+                        self._pages_switch(wid)
         else:
             if platform_id:
                 # 更新导航状态到聊天页并加载对应服务
@@ -2219,6 +2450,182 @@ class AppDelegate(NSObject):
             else:
                 # 不再通过下拉项进入主页，主页请使用返回键
                 return
+
+    # -------- 单窗口多页面：核心实现 --------
+    def _pages_frame(self):
+        try:
+            b = self.root_view.bounds()
+            return NSMakeRect(0, 0, b.size.width, b.size.height)
+        except Exception:
+            return NSMakeRect(0, 0, 800, 600)
+
+    def _pages_create(self, platform_id: str, background: bool = True):
+        """在同一窗口内创建一个新的 WKWebView 页面，后台加载并加入下拉。返回 window_id 或 None。"""
+        try:
+            from uuid import uuid4
+            wid = str(uuid4())
+            cfg = WKWebViewConfiguration.alloc().init()
+            try:
+                cfg.preferences().setJavaScriptCanOpenWindowsAutomatically_(True)
+            except Exception:
+                pass
+            wv = WKWebView.alloc().initWithFrame_configuration_(self._pages_frame(), cfg)
+            try:
+                wv.setUIDelegate_(self)
+                wv.setNavigationDelegate_(self)
+                wv.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+                wv.setAcceptsTouchEvents_(True)
+                wv.setOpaque_(True)
+                wv.setValue_forKey_(True, "drawsBackground")
+                safari_user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+                wv.setCustomUserAgent_(safari_user_agent)
+            except Exception:
+                pass
+            # 添加到 root_view（先隐藏）
+            try:
+                # 将页面视图放在顶栏之下，确保顶栏始终可见
+                if hasattr(self.root_view, 'addSubview_positioned_relativeTo_') and getattr(self, 'top_bar', None) is not None:
+                    self.root_view.addSubview_positioned_relativeTo_(wv, NSWindowBelow, self.top_bar)
+                else:
+                    self.root_view.addSubview_(wv)
+                    # 最后再把顶栏移到最上层
+                    try:
+                        if hasattr(self.root_view, 'addSubview_positioned_relativeTo_') and self.webview is not None:
+                            self.top_bar.removeFromSuperview()
+                            self.root_view.addSubview_positioned_relativeTo_(self.top_bar, NSWindowAbove, wv)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                wv.setHidden_(bool(background))
+            except Exception:
+                pass
+            # 记录与加载
+            self._pages_map[wid] = wv
+            from Foundation import NSDate
+            try:
+                created_at = NSDate.date()
+            except Exception:
+                created_at = None
+            self._page_meta[wid] = { 'platform_id': platform_id, 'created_at': created_at }
+            try:
+                url = self._get_platform_url(platform_id)
+                if url:
+                    nsurl = NSURL.URLWithString_(url)
+                    req = NSURLRequest.requestWithURL_(nsurl)
+                    wv.loadRequest_(req)
+            except Exception:
+                pass
+            # 实时同步下拉与主页气泡
+            try:
+                if self.homepage_manager:
+                    from Foundation import NSDate as _NSDate
+                    self.homepage_manager.add_platform_window(platform_id, wid, { 'createdAt': str(_NSDate.date()) })
+                self._populate_ai_selector(include_home_first=True)
+                self._update_homepage_window_count(platform_id)
+            except Exception:
+                pass
+            return wid
+        except Exception as e:
+            print(f"WARNING: _pages_create 失败: {e}")
+            return None
+
+    def _pages_switch(self, window_id: str) -> bool:
+        try:
+            if window_id not in self._pages_map:
+                return False
+            # 隐藏主页 WebView
+            try:
+                if getattr(self, 'webview', None):
+                    self.webview.setHidden_(True)
+            except Exception:
+                pass
+            # 隐藏当前页
+            if self._active_page_id and self._active_page_id in self._pages_map:
+                try:
+                    self._pages_map[self._active_page_id].setHidden_(True)
+                except Exception:
+                    pass
+            # 显示目标
+            try:
+                self._pages_map[window_id].setHidden_(False)
+            except Exception:
+                pass
+            self._active_page_id = window_id
+            # 窗口标题与返回键
+            try:
+                self.update_back_button_visibility(True)
+                pid = self._page_meta.get(window_id, {}).get('platform_id')
+                base = self._i18n_or_default('app.name', 'Bubble')
+                chat = self._i18n_or_default('nav.chat', 'Chat')
+                name = self._i18n_or_default(f'platform.{pid}', (pid or 'AI').title()) if pid else 'AI'
+                self.update_window_title(f"{base} - {chat}: {name}")
+            except Exception:
+                pass
+            # 保障顶栏与下拉可见
+            try:
+                self._update_ai_selector_ui(True)
+            except Exception:
+                pass
+            # 下拉选中该页
+            try:
+                pid = self._page_meta.get(window_id, {}).get('platform_id')
+                self._select_ai_item(pid, window_id)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _pages_close(self, window_id: str) -> bool:
+        try:
+            meta = self._page_meta.get(window_id) or {}
+            pid = meta.get('platform_id')
+            wv = self._pages_map.get(window_id)
+            if wv is not None:
+                try:
+                    wv.removeFromSuperview()
+                except Exception:
+                    pass
+            self._pages_map.pop(window_id, None)
+            self._page_meta.pop(window_id, None)
+            if getattr(self, '_active_page_id', None) == window_id:
+                self._active_page_id = None
+                # 切到该平台其他页，或回主页
+                alt = None
+                try:
+                    alt = next((wid for wid, mm in self._page_meta.items() if mm.get('platform_id') == pid), None)
+                except Exception:
+                    alt = None
+                if alt:
+                    self._pages_switch(alt)
+                else:
+                    try:
+                        self.update_back_button_visibility(False)
+                    except Exception:
+                        pass
+                    try:
+                        if getattr(self, 'webview', None):
+                            self.webview.setHidden_(False)
+                    except Exception:
+                        pass
+                    try:
+                        self._load_homepage()
+                    except Exception:
+                        pass
+            # 同步 UI
+            try:
+                if self.homepage_manager and pid and window_id:
+                    self.homepage_manager.remove_platform_window(pid, window_id)
+                self._populate_ai_selector(include_home_first=True)
+                if pid:
+                    self._update_homepage_window_count(pid)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
 
     def _populate_ai_selector(self, include_home_first: bool = False):
         """填充AI选择器下拉框"""
@@ -2253,51 +2660,79 @@ class AppDelegate(NSObject):
             except Exception:
                 pass
 
-        # 获取启用的平台列表及其窗口（来自 HomepageManager）
-        enabled = {}
-        if self.homepage_manager:
-            try:
-                enabled = self.homepage_manager.get_enabled_platforms()  # dict pid -> info
-            except Exception:
-                enabled = {}
-
-        if not enabled and self.platform_manager:
-            # 退化为平台管理器（无窗口信息）
-            for p in self.platform_manager.get_enabled_platforms():
-                self._ai_selector_add_item(p.display_name, p.platform_id, None)
-        else:
-            # 基于窗口实例填充；同平台多个实例用序号
-            for pid, info in enabled.items():
-                # 使用短名称
-                # 本地化简名
+        # 优先使用单窗口多页面的实时列表；否则回退到 HomepageManager 配置
+        if self.is_multiwindow_mode and getattr(self, '_page_meta', None) is not None:
+            # 按平台分组 self._page_meta（window_id -> meta）
+            grouped = {}
+            for wid, meta in self._page_meta.items():
                 try:
-                    display_base = self._i18n_or_default(f'platform.{pid}', info.get('display_name', pid.title()))
-                except Exception:
-                    display_base = info.get('display_name', pid.title())
-                # 特殊：mistral/perplexity 仅首字母大写
-                try:
-                    if pid in ("mistral", "perplexity"):
-                        display_base = str(display_base).capitalize()
+                    pid = meta.get('platform_id')
+                    if not pid:
+                        continue
+                    grouped.setdefault(pid, []).append((wid, meta))
                 except Exception:
                     pass
-                win_map = {}
+            for pid, items in grouped.items():
                 try:
-                    win_map = self.homepage_manager.get_platform_windows(pid)
+                    items.sort(key=lambda kv: kv[1].get('created_at') or 0)
                 except Exception:
-                    win_map = {}
-                if not win_map:
-                    # 无实例，添加一个基础项
-                    self._ai_selector_add_item(display_base, pid, None)
-                else:
-                    # 有多个实例：按创建时间排序并编号
-                    items = list(win_map.items())  # (window_id, info)
+                    pass
+                try:
+                    base_name = self._i18n_or_default(f'platform.{pid}', pid.title())
+                except Exception:
+                    base_name = pid.title()
+                try:
+                    if pid in ("mistral", "perplexity"):
+                        base_name = str(base_name).capitalize()
+                except Exception:
+                    pass
+                for idx, (wid, _m) in enumerate(items, start=1):
+                    title = base_name if idx == 1 else f"{base_name} {idx}"
+                    self._ai_selector_add_item(title, pid, wid)
+            if not grouped and self.platform_manager:
+                for p in self.platform_manager.get_enabled_platforms():
+                    self._ai_selector_add_item(p.display_name, p.platform_id, None)
+        else:
+            # 获取启用的平台列表及其窗口（来自 HomepageManager）
+            enabled = {}
+            if self.homepage_manager:
+                try:
+                    enabled = self.homepage_manager.get_enabled_platforms()  # dict pid -> info
+                except Exception:
+                    enabled = {}
+
+            if not enabled and self.platform_manager:
+                # 退化为平台管理器（无窗口信息）
+                for p in self.platform_manager.get_enabled_platforms():
+                    self._ai_selector_add_item(p.display_name, p.platform_id, None)
+            else:
+                # 基于窗口实例填充；同平台多个实例用序号（来自 HomepageManager 的记录）
+                for pid, info in enabled.items():
                     try:
-                        items.sort(key=lambda kv: kv[1].get('createdAt', ''))
+                        display_base = self._i18n_or_default(f'platform.{pid}', info.get('display_name', pid.title()))
+                    except Exception:
+                        display_base = info.get('display_name', pid.title())
+                    try:
+                        if pid in ("mistral", "perplexity"):
+                            display_base = str(display_base).capitalize()
                     except Exception:
                         pass
-                    for idx, (wid, winfo) in enumerate(items, start=1):
-                        title = display_base if idx == 1 else f"{display_base} {idx}"
-                        self._ai_selector_add_item(title, pid, wid)
+                    win_map = {}
+                    try:
+                        win_map = self.homepage_manager.get_platform_windows(pid)
+                    except Exception:
+                        win_map = {}
+                    if not win_map:
+                        self._ai_selector_add_item(display_base, pid, None)
+                    else:
+                        items = list(win_map.items())  # (window_id, info)
+                        try:
+                            items.sort(key=lambda kv: kv[1].get('createdAt', ''))
+                        except Exception:
+                            pass
+                        for idx, (wid, winfo) in enumerate(items, start=1):
+                            title = display_base if idx == 1 else f"{display_base} {idx}"
+                            self._ai_selector_add_item(title, pid, wid)
 
         # 如果最终没有任何选项：放置占位“主页”项，保持顶部栏存在
         if self.ai_selector.numberOfItems() == 0:
@@ -2486,6 +2921,43 @@ class AppDelegate(NSObject):
                 img = self._get_favicon_image(platform_id, url)
                 if img is not None:
                     it.setImage_(img)
+        except Exception:
+            pass
+
+    # --- 多窗口事件回调：同步主页与下拉 ---
+    def _on_multiwin_opened(self, ai_window):
+        try:
+            pid = getattr(ai_window, 'platform_id', None)
+            wid = getattr(ai_window, 'window_id', None)
+            if self.homepage_manager and pid and wid:
+                self.homepage_manager.add_platform_window(pid, wid, { 'createdAt': str(NSDate.date()) })
+        except Exception:
+            pass
+        # 刷新下拉
+        try:
+            self._populate_ai_selector()
+        except Exception:
+            pass
+        # 刷新主页气泡
+        try:
+            if pid:
+                self._update_homepage_window_count(pid)
+        except Exception:
+            pass
+
+    def _on_multiwin_closed(self, window_id, platform_id):
+        try:
+            if self.homepage_manager and platform_id and window_id:
+                self.homepage_manager.remove_platform_window(platform_id, window_id)
+        except Exception:
+            pass
+        try:
+            self._populate_ai_selector()
+        except Exception:
+            pass
+        try:
+            if platform_id:
+                self._update_homepage_window_count(platform_id)
         except Exception:
             pass
 
@@ -3209,6 +3681,15 @@ class AppDelegate(NSObject):
         print(f"导航变化: {page_type}, 平台: {platform_id}")
 
         if page_type == "homepage":
+            # 单窗口多页面：回到主页时隐藏所有后台页面，显示主页 WebView
+            try:
+                for _wid, _wv in list(getattr(self, '_pages_map', {}).items()):
+                    _wv.setHidden_(True)
+                self._active_page_id = None
+                if getattr(self, 'webview', None):
+                    self.webview.setHidden_(False)
+            except Exception:
+                pass
             self._load_homepage()
         elif page_type == "chat" and platform_id:
             # 进入平台页：先展示骨架，再刷新下拉移除“主页”，再加载服务，最后选中当前平台

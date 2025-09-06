@@ -48,11 +48,15 @@
   - 目的：统一使用 Toast 文案，移除对“Memory bubble”文案与“Never”按钮的依赖。
   - 需求：需求 2
 
-- [-] 6. 保证并行会话：切换焦点不销毁/重载 WebView
+- [x] 6. 保证并行会话：切换焦点不销毁/重载 WebView
   - 文件：`src/bubblebot/components/multiwindow_manager.py`
   - 检查并确保：
     - 切换窗口只前置与设定焦点，不调用重载/销毁 API；
     - 关闭窗口时才释放 WebView 与 NSWindow 资源（已有 `_cleanup_window_resources` 可复用）。
+  - 代码要点：
+    - `MultiWindowManager.switchToWindow_` 仅 `orderFront/makeKey` 与 `set_active_window`，不触发 WebView 重载；
+    - `AppDelegate.aiServiceChanged_` 修复：多窗口模式下选择已有平台时改为定位已存在的 `AIWindow` 并 `switch_to_window`，不再错误地基于字典键创建新窗口；
+    - 释放资源路径仅在 `closeWindow_` 调用 `_cleanup_window_resources`。
   - 目的：满足并行场景下后台请求不中断。
   - 需求：需求 1
 

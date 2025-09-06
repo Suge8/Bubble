@@ -121,6 +121,11 @@ class MultiWindowManager(NSObject):
             
             # 页面计数变化回调：Optional[Callable[[int,int], None]]
             self.on_page_count_changed = None
+            # 详细事件回调（用于与上层状态同步）
+            # on_window_opened(ai_window: AIWindow)
+            # on_window_closed(window_id: str, platform_id: str)
+            self.on_window_opened = None
+            self.on_window_closed = None
             
             # 窗口配置
             self.default_window_size = (550, 580)
@@ -134,70 +139,78 @@ class MultiWindowManager(NSObject):
     
     # MARK: - 核心窗口管理方法
     
-    def createWindowForPlatform_(self, platform_id):
+    def _create_window_core(self, platform_id, *, bring_to_front: bool = True) -> Optional[str]:
+        """内部创建窗口核心流程。
+        bring_to_front 为 False 时，不前置/不设为活动窗口，用于后台加载。
         """
-        为指定平台创建新窗口
-        
-        Args:
-            platform_id: 平台标识符
-            
-        Returns:
-            str: 窗口ID，如果创建失败返回None
-        """
-        # 记录创建前页面总数（使用 WindowManager 数据更准确）
+        # 记录创建前页面总数
         old_count = len(self.window_manager.windows)
-        # 检查是否可以创建新窗口（默认不限制，除非外部设置了上限）
         if not self.window_manager.can_create_window(platform_id):
             print(f"无法创建新窗口（达到限制或外部约束）: {platform_id}")
             return None
-        
-        # 获取平台配置
         platform_config = self.platform_config.get_platform(platform_id)
         if not platform_config:
             print(f"未找到平台配置: {platform_id}")
             return None
-        
-        # 计算新窗口位置
         window_position = self._calculate_new_window_position()
-        
-        # 创建AI窗口数据模型
         geometry = WindowGeometry(
-            x=window_position[0],
-            y=window_position[1],
-            width=self.default_window_size[0],
-            height=self.default_window_size[1]
+            x=window_position[0], y=window_position[1],
+            width=self.default_window_size[0], height=self.default_window_size[1]
         )
-        
         ai_window = self.window_manager.create_window(
-            platform_id=platform_id,
-            window_type=WindowType.MAIN,
-            geometry=geometry
+            platform_id=platform_id, window_type=WindowType.MAIN, geometry=geometry
         )
-        
         if not ai_window:
             print("创建AI窗口数据失败")
             return None
-        
         # 创建NSWindow实例
         if not self._create_ns_window(ai_window, platform_config):
-            # 如果NSWindow创建失败，清理AI窗口数据
             self.window_manager.remove_window(ai_window.window_id)
             return None
-        
-        # 更新窗口状态
-        ai_window.activate()
-        self.window_manager.set_active_window(ai_window.window_id)
-        
-        print(f"成功创建窗口: {ai_window.window_id} for platform: {platform_id}")
-        # 触发页面计数变更回调
+        # 状态与展示
+        try:
+            if bring_to_front:
+                ai_window.activate()
+                self.window_manager.set_active_window(ai_window.window_id)
+                # 显示窗口
+                nsw = self.ns_windows.get(ai_window.window_id)
+                if nsw is not None:
+                    nsw.orderFront_(None)
+                    nsw.makeKeyAndOrderFront_(None)
+                    self.active_ns_window = nsw
+            else:
+                # 后台：不设为活动，不前置
+                ai_window.show_loading()
+                nsw = self.ns_windows.get(ai_window.window_id)
+                if nsw is not None:
+                    try:
+                        nsw.orderOut_(None)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        print(f"成功创建窗口: {ai_window.window_id} for platform: {platform_id} (bring_to_front={bring_to_front})")
+        # 回调
         try:
             new_count = len(self.window_manager.windows)
             cb = getattr(self, 'on_page_count_changed', None)
             if callable(cb):
                 cb(old_count, new_count)
+            ocb = getattr(self, 'on_window_opened', None)
+            if callable(ocb):
+                ocb(ai_window)
         except Exception:
             pass
         return ai_window.window_id
+
+    def createWindowForPlatform_(self, platform_id):
+        """为指定平台创建新窗口并前置显示（默认行为）。"""
+        return self._create_window_core(platform_id, bring_to_front=True)
+
+    def createWindowForPlatform_background_(self, platform_id, background):
+        """创建窗口，background=True 表示后台加载，不前置显示。"""
+        bring = not bool(background)
+        return self._create_window_core(platform_id, bring_to_front=bring)
     
     def closeWindow_(self, window_id):
         """
@@ -218,7 +231,12 @@ class MultiWindowManager(NSObject):
         
         # 关闭前记录页面总数
         old_count = len(self.window_manager.windows)
-        # 清理资源
+        # 清理资源（在移除前保留平台信息用于回调）
+        aiw = None
+        try:
+            aiw = self.window_manager.get_window(window_id)
+        except Exception:
+            aiw = None
         self._cleanup_window_resources(window_id)
         
         # 移除AI窗口数据
@@ -235,6 +253,11 @@ class MultiWindowManager(NSObject):
             cb = getattr(self, 'on_page_count_changed', None)
             if callable(cb):
                 cb(old_count, new_count)
+            # 通知上层具体关闭事件
+            if aiw is not None:
+                ocb = getattr(self, 'on_window_closed', None)
+                if callable(ocb):
+                    ocb(window_id, getattr(aiw, 'platform_id', None))
         except Exception:
             pass
         return True
@@ -338,12 +361,8 @@ class MultiWindowManager(NSObject):
             if not self._setup_window_content(ns_window, ai_window, platform_config):
                 return False
             
-            # 保存窗口引用
+            # 保存窗口引用（是否显示由创建流程控制）
             self.ns_windows[ai_window.window_id] = ns_window
-            
-            # 显示窗口
-            ns_window.orderFront_(None)
-            ns_window.makeKeyAndOrderFront_(None)
             
             return True
             

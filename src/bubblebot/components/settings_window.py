@@ -1419,18 +1419,28 @@ class SettingsWindow(NSObject):
                 lbl.setTextColor_(NSColor.whiteColor())
             except Exception:
                 pass
-            lbl.setStringValue_(message)
+            lbl.setStringValue_(str(message) if message is not None else "")
             toast.addSubview_(lbl)
 
             # Start hidden and fade in/out
             toast.setAlphaValue_(0.0)
-            content.addSubview_(toast)
+            try:
+                subs = list(content.subviews())
+                anchor = subs[-1] if subs else None
+                if hasattr(content, 'addSubview_positioned_relativeTo_'):
+                    content.addSubview_positioned_relativeTo_(toast, NSWindowAbove, anchor)
+                else:
+                    content.addSubview_(toast)
+            except Exception:
+                content.addSubview_(toast)
             try:
                 if os.environ.get('BB_NO_EFFECTS') != '1':
                     NSAnimationContext.beginGrouping()
                     NSAnimationContext.currentContext().setDuration_(0.18)
                     toast.animator().setAlphaValue_(1.0)
                     NSAnimationContext.endGrouping()
+                else:
+                    toast.setAlphaValue_(1.0)
             except Exception:
                 toast.setAlphaValue_(1.0)
 
