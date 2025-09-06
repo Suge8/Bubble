@@ -88,19 +88,19 @@ def load_custom_launcher_trigger():
         except (json.JSONDecodeError, KeyError) as e:
             print(f"[BubbleBot] Failed to load custom trigger: {e}. Using default trigger.", flush=True)
 
-def set_custom_launcher_trigger(app):
-    """Show a polished Vercel-style overlay to set a new global hotkey trigger."""
+def set_custom_launcher_trigger(app, target_window=None):
+    """Show a polished Vercel-style overlay to set a new global hotkey trigger.
+
+    If target_window is provided, the overlay attaches to that window's content view
+    (e.g., Settings window). Otherwise attaches to the main app window.
+    """
     from .i18n import t as _t
-    app.showWindow_(None)
+    if target_window is None:
+        app.showWindow_(None)
     print("Setting new BubbleBot launch shortcut. (Press keys or click Cancel)", flush=True)
 
-    # Preserve previous trigger so Cancel can restore
-    prev_flags, prev_key = LAUNCHER_TRIGGER.get("flags"), LAUNCHER_TRIGGER.get("key")
-    # Disable the current trigger until user picks a new one
-    LAUNCHER_TRIGGER["flags"], LAUNCHER_TRIGGER["key"] = None, None
-
     # Get the content view bounds
-    content_view = app.window.contentView()
+    content_view = (target_window.contentView() if target_window is not None else app.window.contentView())
     content_bounds = content_view.bounds()
 
     # Overlay dim layer (black alpha) + optional blur underlay
@@ -201,7 +201,10 @@ def set_custom_launcher_trigger(app):
         overlay_view.removeFromSuperview()
         global handle_new_trigger
         handle_new_trigger = None
-        app.showWindow_(None)
+        try:
+            app.showWindow_(None)
+        except Exception:
+            pass
     proxy = _ActionProxy.alloc().initWithHandler_(cancel_action)
     cancel.setTarget_(proxy)
     cancel.setAction_("callWithSender:")
@@ -212,6 +215,16 @@ def set_custom_launcher_trigger(app):
     card.addSubview_(title); card.addSubview_(subtitle); card.addSubview_(pill); card.addSubview_(cancel)
     overlay_view.addSubview_(card)
     content_view.addSubview_(overlay_view)
+    try:
+        if target_window is not None:
+            target_window.makeKeyAndOrderFront_(None)
+    except Exception:
+        pass
+
+    # Preserve previous trigger and temporarily disable current one only
+    # after overlay has been added (avoid losing shortcut if overlay fails)
+    prev_flags, prev_key = LAUNCHER_TRIGGER.get("flags"), LAUNCHER_TRIGGER.get("key")
+    LAUNCHER_TRIGGER["flags"], LAUNCHER_TRIGGER["key"] = None, None
 
     # Animate overlay + card
     try:

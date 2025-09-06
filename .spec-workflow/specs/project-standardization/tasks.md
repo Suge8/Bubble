@@ -59,12 +59,12 @@
   - 检索 `Autolauncher`/`auto launch`/`Install/Uninstall` 并清理；构建/运行通过。
   - Purpose: 删除冗余实现。
 
-- [ ] 3.2 登录项开关实现（macOS），非 Darwin 兼容
+- [x] 3.2 登录项开关实现（macOS），非 Darwin 兼容
   - Files: src/bubblebot/utils/login_items.py (new), src/bubblebot/components/settings_window.py
-  - ServiceManagement 开机启动；非 Darwin 提示并禁用。
+  - 使用 LaunchAgents 开机启动（用户级）；非 Darwin 提示并禁用。
   - Purpose: 跨环境兼容。
 
-- [ ] 4.1 状态栏动态快捷键文案
+- [x] 4.1 状态栏动态快捷键文案
   - File: src/bubblebot/app.py
   - 当前快捷键格式化为人类可读，并在设置变更时刷新提示项。
   - Purpose: 可用性。

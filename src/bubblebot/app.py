@@ -360,6 +360,9 @@ class AppDelegate(NSObject):
         self.skeleton_view = None
         self.memory_bubble_view = None
         self._memory_bubble_dismissed = False
+        # 错误覆盖层（导航失败提示）
+        self.error_overlay = None
+        self._error_label = None
         self.window_initialized = False
         self._suppress_ai_action = False
         return self
@@ -1039,21 +1042,54 @@ class AppDelegate(NSObject):
         self.top_bar.setAutoresizingMask_(NSViewWidthSizable | NSViewMinYMargin)
         root_view.addSubview_(self.top_bar)
 
-        # 左上角品牌：彩色圆角 Logo + 更好看的字体
+        # 左上角品牌：彩色圆角 Logo + 更好看的字体（打包与开发一致加载）
         try:
             brand_h = 28
             by = (self.top_bar_height - brand_h) / 2
             bx = 10
             script_dir2 = os.path.dirname(os.path.abspath(__file__))
-            # 优先使用彩色 icon.iconset 中的 PNG
-            color_candidates = [
-                os.path.join(script_dir2, "logo/icon.iconset/icon_64x64@2x.png"),
-                os.path.join(script_dir2, "logo/icon.iconset/icon_64x64.png"),
-                os.path.join(script_dir2, "logo/icon.iconset/icon_32x32@2x.png"),
-                os.path.join(script_dir2, "logo/icon.iconset/icon_32x32.png"),
-            ]
-            logo_path = next((p for p in color_candidates if os.path.exists(p)), os.path.join(script_dir2, LOGO_BLACK_PATH))
-            brand_img = NSImage.alloc().initWithContentsOfFile_(logo_path)
+            brand_img = None
+            # 1) NSBundle 资源（py2app 打包后优先）
+            try:
+                bundle = NSBundle.mainBundle()
+                for base in ("icon_64x64@2x", "icon_64x64", "icon_32x32@2x", "icon_32x32"):
+                    p = bundle.pathForResource_ofType_inDirectory_(base, "png", "logo/icon.iconset")
+                    if p:
+                        tmp = NSImage.alloc().initWithContentsOfFile_(p)
+                        if tmp is not None:
+                            brand_img = tmp
+                            break
+            except Exception:
+                pass
+            # 2) pkgutil（zip-safe，打包为 zip 的情况）
+            if brand_img is None:
+                try:
+                    import pkgutil
+                    for name in (
+                        "logo/icon.iconset/icon_64x64@2x.png",
+                        "logo/icon.iconset/icon_64x64.png",
+                        "logo/icon.iconset/icon_32x32@2x.png",
+                        "logo/icon.iconset/icon_32x32.png",
+                    ):
+                        data = pkgutil.get_data('bubblebot', name)
+                        if data:
+                            nsdata = NSData.dataWithBytes_length_(data, len(data))
+                            tmp = NSImage.alloc().initWithData_(nsdata)
+                            if tmp is not None:
+                                brand_img = tmp
+                                break
+                except Exception:
+                    pass
+            # 3) 文件系统（开发模式兜底）
+            if brand_img is None:
+                color_candidates = [
+                    os.path.join(script_dir2, "logo/icon.iconset/icon_64x64@2x.png"),
+                    os.path.join(script_dir2, "logo/icon.iconset/icon_64x64.png"),
+                    os.path.join(script_dir2, "logo/icon.iconset/icon_32x32@2x.png"),
+                    os.path.join(script_dir2, "logo/icon.iconset/icon_32x32.png"),
+                ]
+                logo_path = next((p for p in color_candidates if os.path.exists(p)), os.path.join(script_dir2, LOGO_BLACK_PATH))
+                brand_img = NSImage.alloc().initWithContentsOfFile_(logo_path)
             self.brand_logo = NSImageView.alloc().initWithFrame_(NSMakeRect(bx, by, brand_h, brand_h))
             if brand_img:
                 try:
@@ -1070,15 +1106,27 @@ class AppDelegate(NSObject):
             self.brand_logo.setAutoresizingMask_(NSViewMaxXMargin | NSViewMinYMargin)
             self.top_bar.addSubview_(self.brand_logo)
 
-            self.brand_label = NSTextField.alloc().initWithFrame_(NSMakeRect(bx+brand_h+10, by-2, 140, brand_h))
+            # 更美观的品牌文字（字距、对齐到 logo 中线）
+            label_h = 18.0
+            ly = (self.top_bar_height - label_h) / 2.0 + 0.5
+            self.brand_label = NSTextField.alloc().initWithFrame_(NSMakeRect(bx+brand_h+8, ly, 160, label_h))
             self.brand_label.setBezeled_(False)
             self.brand_label.setEditable_(False)
             self.brand_label.setSelectable_(False)
             self.brand_label.setDrawsBackground_(False)
-            self.brand_label.setStringValue_("Bubble")
-            cute = self._get_cute_bold_font(15)
-            self.brand_label.setFont_(cute or NSFont.boldSystemFontOfSize_(15))
-            self.brand_label.setTextColor_(NSColor.labelColor())
+            cute = self._get_cute_bold_font(15) or NSFont.boldSystemFontOfSize_(15)
+            try:
+                from AppKit import NSAttributedString, NSFontAttributeName, NSKernAttributeName, NSForegroundColorAttributeName
+                attrs = {NSFontAttributeName: cute, NSKernAttributeName: 0.4, NSForegroundColorAttributeName: NSColor.labelColor()}
+                self.brand_label.setAttributedStringValue_(NSAttributedString.alloc().initWithString_attributes_("Bubble", attrs))
+            except Exception:
+                # 兜底：不支持属性时用普通字符串
+                self.brand_label.setStringValue_("Bubble")
+                self.brand_label.setFont_(cute)
+                try:
+                    self.brand_label.setTextColor_(NSColor.labelColor())
+                except Exception:
+                    pass
             self.brand_label.setAutoresizingMask_(NSViewMaxXMargin | NSViewMinYMargin)
             self.top_bar.addSubview_(self.brand_label)
         except Exception:
@@ -2318,6 +2366,11 @@ class AppDelegate(NSObject):
         """开始加载时显示骨架屏。"""
         try:
             print("DEBUG: WKWebView didStartProvisionalNavigation")
+            # 新的加载开始时，隐藏错误提示
+            try:
+                self._hide_error_overlay()
+            except Exception:
+                pass
             self._show_skeleton_overlay()
         except Exception:
             pass
@@ -2350,12 +2403,40 @@ class AppDelegate(NSObject):
             self._hide_skeleton_overlay()
         except Exception:
             pass
+        # 成功加载后隐藏错误提示
+        try:
+            self._hide_error_overlay()
+        except Exception:
+            pass
     
     def webView_didFailNavigation_withError_(self, webView, navigation, error):
         """导航失败时调用"""
         print(f"导航失败: {error}")
         try:
             self._hide_skeleton_overlay()
+        except Exception:
+            pass
+        try:
+            msg = getattr(error, 'localizedDescription', None)
+            if not msg:
+                msg = str(error)
+            self._show_error_overlay(msg)
+        except Exception:
+            pass
+
+    # 早期阶段失败（例如网络中断、证书、DNS）
+    def webView_didFailProvisionalNavigation_withError_(self, webView, navigation, error):
+        try:
+            print(f"导航失败: {error}")
+        except Exception:
+            pass
+        try:
+            self._hide_skeleton_overlay()
+        except Exception:
+            pass
+        try:
+            msg = getattr(error, 'localizedDescription', None) or str(error)
+            self._show_error_overlay(msg)
         except Exception:
             pass
 
@@ -2367,6 +2448,10 @@ class AppDelegate(NSObject):
     def _load_homepage(self):
         """加载主页内容"""
         if self.homepage_manager:
+            try:
+                self._hide_error_overlay()
+            except Exception:
+                pass
             try:
                 self._hide_skeleton_overlay()
             except Exception:
@@ -2415,6 +2500,10 @@ class AppDelegate(NSObject):
             url = NSURL.URLWithString_(service_url)
             request = NSURLRequest.requestWithURL_(url)
             # 显示骨架并发起加载
+            try:
+                self._hide_error_overlay()
+            except Exception:
+                pass
             try:
                 self._show_skeleton_overlay()
             except Exception:
@@ -2506,6 +2595,153 @@ class AppDelegate(NSObject):
                 self.root_view.addSubview_positioned_relativeTo_(self.top_bar, NSWindowAbove, self.skeleton_view)
             except Exception:
                 self.root_view.addSubview_(self.skeleton_view)
+        except Exception:
+            pass
+
+    # ------- 错误覆盖层（导航失败） -------
+    def _ensure_error_overlay(self):
+        try:
+            if self.error_overlay is not None:
+                return
+            if not self.root_view or not self.window:
+                return
+            bounds = self.window.contentView().bounds()
+            overlay = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, bounds.size.width, bounds.size.height))
+            overlay.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+            overlay.setHidden_(True)
+            overlay.setWantsLayer_(True)
+            try:
+                overlay.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.94).CGColor())
+            except Exception:
+                pass
+
+            # 卡片
+            card_w = 360
+            card_h = 160
+            cx = (bounds.size.width - card_w) / 2
+            cy = (bounds.size.height - card_h) / 2
+            card = NSView.alloc().initWithFrame_(NSMakeRect(cx, cy, card_w, card_h))
+            card.setAutoresizingMask_(NSViewMinXMargin | NSViewMaxXMargin | NSViewMinYMargin | NSViewMaxYMargin)
+            card.setWantsLayer_(True)
+            try:
+                card.layer().setCornerRadius_(12.0)
+                card.layer().setBackgroundColor_(NSColor.whiteColor().CGColor())
+                card.layer().setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0).CGColor())
+                card.layer().setBorderWidth_(1.0)
+                card.layer().setShadowOpacity_(0.08)
+                card.layer().setShadowRadius_(12.0)
+            except Exception:
+                pass
+            overlay.addSubview_(card)
+
+            # 标题与说明
+            title = NSTextField.alloc().initWithFrame_(NSMakeRect(16, card_h - 40, card_w - 32, 22))
+            title.setBezeled_(False)
+            title.setEditable_(False)
+            title.setSelectable_(False)
+            title.setDrawsBackground_(False)
+            try:
+                t = self._i18n_or_default('error.navigationTitle', '无法打开页面')
+                cute = self._get_cute_bold_font(14) or NSFont.boldSystemFontOfSize_(14)
+                from AppKit import NSAttributedString, NSFontAttributeName
+                title.setAttributedStringValue_(NSAttributedString.alloc().initWithString_attributes_(t, {NSFontAttributeName: cute}))
+            except Exception:
+                title.setStringValue_("无法打开页面")
+            card.addSubview_(title)
+
+            label = NSTextField.alloc().initWithFrame_(NSMakeRect(16, 64, card_w - 32, 44))
+            label.setBezeled_(False)
+            label.setEditable_(False)
+            label.setSelectable_(False)
+            label.setDrawsBackground_(False)
+            label.setLineBreakMode_(NSLineBreakByWordWrapping)
+            label.setAllowsDefaultTighteningForTruncation_(True)
+            card.addSubview_(label)
+            self._error_label = label
+
+            # 按钮
+            def _mk_btn(title_str, x):
+                btn = NSButton.alloc().initWithFrame_(NSMakeRect(x, 16, 140, 28))
+                btn.setBezelStyle_(NSBezelStyleRounded)
+                btn.setTitle_(title_str)
+                return btn
+
+            retry_title = self._i18n_or_default('button.retry', '重试')
+            home_title = self._i18n_or_default('button.home', '返回主页')
+
+            retry = _mk_btn(retry_title, 16)
+            home = _mk_btn(home_title, card_w - 16 - 140)
+
+            try:
+                retry.setTarget_(self)
+                retry.setAction_(objc.selector(self.errorRetry_, signature=b'v@:@'))
+            except Exception:
+                pass
+            try:
+                home.setTarget_(self)
+                home.setAction_(objc.selector(self.errorGoHome_, signature=b'v@:@'))
+            except Exception:
+                pass
+
+            card.addSubview_(retry)
+            card.addSubview_(home)
+
+            # 叠放在 WebView 之上、顶栏之下
+            try:
+                self.root_view.addSubview_positioned_relativeTo_(overlay, NSWindowAbove, self.webview)
+                if self.top_bar:
+                    self.top_bar.removeFromSuperview()
+                    self.root_view.addSubview_positioned_relativeTo_(self.top_bar, NSWindowAbove, overlay)
+            except Exception:
+                self.root_view.addSubview_(overlay)
+
+            self.error_overlay = overlay
+        except Exception:
+            pass
+
+    def _show_error_overlay(self, message: str):
+        try:
+            self._ensure_error_overlay()
+            if not self.error_overlay:
+                return
+            # 文案
+            text = self._i18n_or_default('error.navigationFailed', '网络连接中断或页面无法加载')
+            if message:
+                text = f"{text}\n{message}"
+            if self._error_label:
+                self._error_label.setStringValue_(text)
+            self.error_overlay.setHidden_(False)
+        except Exception:
+            pass
+
+    def _hide_error_overlay(self):
+        try:
+            if self.error_overlay:
+                self.error_overlay.setHidden_(True)
+        except Exception:
+            pass
+
+    # 错误覆盖层按钮事件
+    def errorRetry_(self, sender):
+        try:
+            self._hide_error_overlay()
+            # 优先使用 WKWebView.reload
+            try:
+                self.webview.reload()
+            except Exception:
+                try:
+                    self.webview.reload_(None)
+                except Exception:
+                    self.webview.reload(None)
+        except Exception:
+            pass
+
+    def errorGoHome_(self, sender):
+        try:
+            self._hide_error_overlay()
+            if self.navigation_controller:
+                self.navigation_controller.navigate_to_homepage()
+            self._load_homepage()
         except Exception:
             pass
 

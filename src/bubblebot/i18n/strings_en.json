@@ -18,7 +18,7 @@
   "button.remove": "Remove",
   "button.setDefault": "Set as Default",
   "button.newWindow": "New Window",
-  "button.change": "Change…",
+  "button.change": "Change",
   "button.save": "Save",
   "button.cancel": "Cancel",
   "hotkey.overlay.title": "Set Shortcut",
@@ -43,5 +43,6 @@
   "settings.launchAtLogin": "Launch at Login",
   "settings.hotkey": "Hotkey",
   "settings.clearCache": "Clear Web Cache",
+  "settings.clearCacheDone": "Web cache cleared",
   "errors.unsupportedPlatform": "Unsupported platform"
 }

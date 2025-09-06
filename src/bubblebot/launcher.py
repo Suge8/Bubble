@@ -36,7 +36,8 @@ def get_executable():
         executable = os.path.join(app_path, "Contents", "MacOS", APP_TITLE)
         program_args = [executable]
     else:  # Running from source (pip install or python -m ...)
-        program_args = [sys.executable, "-m", APP_TITLE.lower()]
+        # Use the Python package name, not the display title
+        program_args = [sys.executable, "-m", "bubblebot"]
     return program_args
 
 # --- LaunchAgent (Autolauncher) removed in 3.1 ---

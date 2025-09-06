@@ -47,9 +47,10 @@ from AppKit import (
     NSFocusRingTypeNone,
 )
 
-from Foundation import NSObject
+from Foundation import NSObject, NSAttributedString
 
 from ..i18n import t as _t, get_language as _get_lang
+from ..utils import login_items
 from .config_manager import ConfigManager
 from ..listener import set_custom_launcher_trigger
 
@@ -67,6 +68,7 @@ class VercelButton(NSButton):
             self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08)
             self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.14)
             self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.22)
+            self._dark_style = False
             self.layer().setBackgroundColor_(self._base_bg.CGColor())
             # No visible border and no blue focus ring
             self.layer().setBorderWidth_(0.0)
@@ -80,6 +82,33 @@ class VercelButton(NSButton):
         self._tracking_area = None
         self._is_primary = False
         return self
+
+    def _apply_title_color(self, color):
+        try:
+            from AppKit import NSForegroundColorAttributeName
+            title = self.title() or ""
+            attr = {NSForegroundColorAttributeName: color}
+            self.setAttributedTitle_(NSAttributedString.alloc().initWithString_attributes_(title, attr))
+        except Exception:
+            pass
+
+    def setStyleDark_(self, dark):
+        self._dark_style = bool(dark)
+        try:
+            if self._dark_style:
+                self._base_bg = NSColor.blackColor().colorWithAlphaComponent_(0.86)
+                self._hover_bg = NSColor.blackColor().colorWithAlphaComponent_(0.93)
+                self._press_bg = NSColor.blackColor().colorWithAlphaComponent_(1.0)
+                self.layer().setBorderWidth_(0.0)
+                self.layer().setBorderColor_(NSColor.clearColor().CGColor())
+                self._apply_title_color(NSColor.whiteColor())
+            else:
+                self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08)
+                self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.14)
+                self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.22)
+            self.layer().setBackgroundColor_(self._base_bg.CGColor())
+        except Exception:
+            pass
 
     def updateTrackingAreas(self):
         try:
@@ -318,11 +347,11 @@ class SettingsWindow(NSObject):
         self.lang_popup.addItemWithTitle_("한국어")
         self.lang_popup.addItemWithTitle_("Français")
         try:
+            # Remove gray border and background for a cleaner look
             self.lang_popup.setWantsLayer_(True)
-            self.lang_popup.layer().setCornerRadius_(8.0)
-            self.lang_popup.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.06).CGColor())
-            self.lang_popup.layer().setBorderWidth_(1.0)
-            self.lang_popup.layer().setBorderColor_(NSColor.separatorColor().colorWithAlphaComponent_(0.25).CGColor())
+            self.lang_popup.setBordered_(False)
+            self.lang_popup.layer().setBackgroundColor_(NSColor.clearColor().CGColor())
+            self.lang_popup.layer().setBorderWidth_(0.0)
         except Exception:
             pass
         self.card.addSubview_(self.lang_popup)
@@ -332,11 +361,27 @@ class SettingsWindow(NSObject):
         self.launch_checkbox.setButtonType_(NSSwitchButton)
         self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
         self.card.addSubview_(self.launch_checkbox)
+        # Disable on non-Darwin
+        try:
+            import platform as _platform
+
+            if _platform.system().lower() != 'darwin':
+                self.launch_checkbox.setEnabled_(False)
+                try:
+                    self.launch_checkbox.setToolTip_("macOS only")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # Hotkey row
         self.hotkey_label = add_label(_t('settings.hotkey'), 16, card_bounds.size.height - 160, 80, 24)
         self.hotkey_value = add_label("", 110, card_bounds.size.height - 160, 220, 24)
         self.hotkey_button = add_button(_t('button.change'), card_bounds.size.width - 148, card_bounds.size.height - 166, 132, 36)
+        try:
+            self.hotkey_button.setStyleDark_(True)
+        except Exception:
+            pass
         self.hotkey_button.setTarget_(self)
         self.hotkey_button.setAction_("changeHotkey:")
         try:
@@ -344,8 +389,13 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
 
-        # Clear cache (bottom-left)
-        self.clear_cache_button = add_button(_t('settings.clearCache'), 16, 16, 200, 36)
+        # Clear cache: place below hotkey row, above launch-at-login
+        clear_y = max(16, (card_bounds.size.height - 166) - 44)
+        self.clear_cache_button = add_button(_t('settings.clearCache'), 16, clear_y, 200, 36)
+        try:
+            self.clear_cache_button.setStyleDark_(True)
+        except Exception:
+            pass
         self.clear_cache_button.setTarget_(self)
         self.clear_cache_button.setAction_("clearCache:")
 
@@ -364,8 +414,9 @@ class SettingsWindow(NSObject):
             self.save_button.setAutoresizingMask_((1 << 1) | (1 << 0))  # width + minX
         except Exception:
             pass
+        # Black vercel-style buttons
         try:
-            self.save_button.setPrimary_(True)
+            self.save_button.setStyleDark_(True)
         except Exception:
             pass
         self.cancel_button = add_button(_t('button.cancel'), cancel_x, 16, cancel_w, cancel_h)
@@ -375,8 +426,15 @@ class SettingsWindow(NSObject):
             self.cancel_button.setAutoresizingMask_((1 << 1) | (1 << 0))
         except Exception:
             pass
-        # Launch at login checkbox to the left of Save
-        self.launch_checkbox.setFrameOrigin_((max(16, save_x - 16 - 220), 22))
+        try:
+            self.cancel_button.setStyleDark_(True)
+        except Exception:
+            pass
+        # Launch at login aligned with Save/Cancel row (same baseline)
+        try:
+            self.launch_checkbox.setFrameOrigin_((16, 16))
+        except Exception:
+            pass
 
         self._load_values_into_ui()
 
@@ -389,9 +447,16 @@ class SettingsWindow(NSObject):
         except ValueError:
             idx = 0
         self.lang_popup.selectItemAtIndex_(idx)
-        # Launch at login (persisted only)
-        cfg = ConfigManager.load()
-        launch = bool(cfg.get("launch_at_login", False))
+        # Launch at login
+        try:
+            if login_items.is_supported():
+                launch = bool(login_items.is_enabled())
+            else:
+                cfg = ConfigManager.load()
+                launch = bool(cfg.get("launch_at_login", False))
+        except Exception:
+            cfg = ConfigManager.load()
+            launch = bool(cfg.get("launch_at_login", False))
         try:
             self.launch_checkbox.setState_(1 if launch else 0)
         except Exception:
@@ -484,15 +549,23 @@ class SettingsWindow(NSObject):
                 self.app_delegate.changeLanguage_(new_lang)
         except Exception:
             pass
-        # Launch at login (persist only)
+        # Launch at login
         try:
-            cfg = ConfigManager.load()
             try:
                 state = bool(self.launch_checkbox.state())
             except Exception:
                 state = False
-            cfg["launch_at_login"] = state
-            ConfigManager.save(cfg)
+            if login_items.is_supported():
+                ok, _msg = login_items.set_enabled(state)
+                # Persist mirror state for UI consistency
+                cfg = ConfigManager.load()
+                cfg["launch_at_login"] = bool(state and ok)
+                ConfigManager.save(cfg)
+            else:
+                # Non-Darwin: keep persisted flag only (UI disabled to prevent change)
+                cfg = ConfigManager.load()
+                cfg["launch_at_login"] = state
+                ConfigManager.save(cfg)
         except Exception:
             pass
         # Close
@@ -505,12 +578,19 @@ class SettingsWindow(NSObject):
         try:
             if hasattr(self.app_delegate, 'clearWebViewData_'):
                 self.app_delegate.clearWebViewData_(None)
+            # Show localized toast feedback
+            self._show_toast(_t('settings.clearCacheDone'))
         except Exception:
-            pass
+            # Best-effort feedback even if clearing threw
+            try:
+                self._show_toast(_t('settings.clearCacheDone'))
+            except Exception:
+                pass
 
     def changeHotkey_(self, sender):
         try:
-            set_custom_launcher_trigger(self.app_delegate)
+            # Show the hotkey overlay attached to the Settings window so it appears on top
+            set_custom_launcher_trigger(self.app_delegate, target_window=self.window)
         except Exception:
             pass
         # Update hint value soon after
@@ -651,5 +731,65 @@ class SettingsWindow(NSObject):
                 border = (NSColor.whiteColor().colorWithAlphaComponent_(0.08) if dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
                 self.card.layer().setBackgroundColor_(card_bg.CGColor())
                 self.card.layer().setBorderColor_(border.CGColor())
+        except Exception:
+            pass
+
+    def _show_toast(self, message: str):
+        if not self.window:
+            return
+        try:
+            content = self.card if hasattr(self, 'card') and self.card else self.window.contentView()
+            bounds = content.bounds()
+            tw, th = 260, 36
+            tx = (bounds.size.width - tw) / 2
+            ty = bounds.size.height - 120
+            toast = NSView.alloc().initWithFrame_(NSMakeRect(tx, ty, tw, th))
+            toast.setWantsLayer_(True)
+            # Black translucent background with rounded corners
+            toast.layer().setCornerRadius_(8.0)
+            toast.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.85).CGColor())
+
+            lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(12, 8, tw - 24, th - 16))
+            lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
+            lbl.setFont_(NSFont.systemFontOfSize_(13))
+            try:
+                lbl.setTextColor_(NSColor.whiteColor())
+            except Exception:
+                pass
+            lbl.setStringValue_(message)
+            toast.addSubview_(lbl)
+
+            # Start hidden and fade in/out
+            toast.setAlphaValue_(0.0)
+            content.addSubview_(toast)
+            try:
+                if os.environ.get('BB_NO_EFFECTS') != '1':
+                    NSAnimationContext.beginGrouping()
+                    NSAnimationContext.currentContext().setDuration_(0.18)
+                    toast.animator().setAlphaValue_(1.0)
+                    NSAnimationContext.endGrouping()
+            except Exception:
+                toast.setAlphaValue_(1.0)
+
+            # Auto dismiss after 1.2s
+            try:
+                from Foundation import NSTimer
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    1.2, self, 'dismissToast:', toast, False
+                )
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def dismissToast_(self, timer):
+        try:
+            toast = timer.userInfo()
+            if os.environ.get('BB_NO_EFFECTS') != '1':
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.currentContext().setDuration_(0.18)
+                toast.animator().setAlphaValue_(0.0)
+                NSAnimationContext.endGrouping()
+            toast.removeFromSuperview()
         except Exception:
             pass

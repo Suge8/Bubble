@@ -18,7 +18,7 @@
   "button.remove": "제거",
   "button.setDefault": "기본값으로 설정",
   "button.newWindow": "새 창",
-  "button.change": "변경…",
+  "button.change": "변경",
   "button.save": "저장",
   "button.cancel": "취소",
   "hotkey.overlay.title": "단축키 설정",
@@ -43,5 +43,6 @@
   "settings.launchAtLogin": "로그인 시 실행",
   "settings.hotkey": "단축키",
   "settings.clearCache": "웹 캐시 지우기",
+  "settings.clearCacheDone": "웹 캐시가 삭제되었습니다",
   "errors.unsupportedPlatform": "지원되지 않는 플랫폼"
 }

@@ -402,13 +402,6 @@ class HomepageManager(NSObject):
               <div class=\"right\">{bubble}{more_btn}</div>
             </div>
             """
-        # 顶部品牌区（使用 data URL 或表情符号兜底）
-        brand_logo_html = (
-            f'<img class="brand-logo" src="{self.logo_data_url}" alt="Bubble" />'
-            if getattr(self, 'logo_data_url', None) else
-            '<div class="brand-logo-fallback">🫧</div>'
-        )
-
         html = f"""
         <!DOCTYPE html>
         <html lang=\"zh-CN\">
@@ -420,12 +413,6 @@ class HomepageManager(NSObject):
                 :root {{ --bg:#fafafa; --card:#fff; --border:#eaeaea; --text:#111; --muted:#666; --accent:#111; --radius:12px; }}
                 * {{ box-sizing: border-box; }}
                 body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); }}
-                .brand {{
-                    max-width:740px; margin:0 auto 8px; display:flex; align-items:center; gap:10px; padding:8px 10px;
-                }}
-                .brand-logo {{ width:28px; height:28px; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,.08); }}
-                .brand-logo-fallback {{ font-size:22px; }}
-                .brand-name {{ font-weight:700; font-size:14px; letter-spacing:.2px; }}
                 .list {{ max-width:740px; margin:0 auto; display:flex; flex-direction:column; gap:8px; }}
                 .hrow {{ display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 12px; cursor:pointer; transition: background .18s ease, box-shadow .18s ease, transform .18s ease; }}
                 .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); transform: translateY(-1px); }}
@@ -451,7 +438,6 @@ class HomepageManager(NSObject):
             </style>
         </head>
         <body>
-            <div class=\"brand\">{brand_logo_html}<div class=\"brand-name\">Bubble</div></div>
             <div class=\"list\">{rows}</div>
             <div id=\"menu\" class=\"menu\"><div class=\"item\" data-action=\"duplicate\">重复添加</div></div>
             <div id=\"popover\" class=\"popover\"></div>

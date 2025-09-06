@@ -18,7 +18,7 @@
   "button.remove": "削除",
   "button.setDefault": "デフォルトに設定",
   "button.newWindow": "新しいウィンドウ",
-  "button.change": "変更…",
+  "button.change": "変更",
   "button.save": "保存",
   "button.cancel": "キャンセル",
   "hotkey.overlay.title": "ショートカットを設定",
@@ -43,5 +43,6 @@
   "settings.launchAtLogin": "ログイン時に起動",
   "settings.hotkey": "ホットキー",
   "settings.clearCache": "Web キャッシュを消去",
+  "settings.clearCacheDone": "Webキャッシュを消去しました",
   "errors.unsupportedPlatform": "未対応のプラットフォーム"
 }

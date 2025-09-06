@@ -18,7 +18,7 @@
   "button.remove": "移除",
   "button.setDefault": "设为默认",
   "button.newWindow": "新页面",
-  "button.change": "更改…",
+  "button.change": "更改",
   "button.save": "保存",
   "button.cancel": "取消",
   "hotkey.overlay.title": "设置快捷键",
@@ -43,5 +43,6 @@
   "settings.launchAtLogin": "开机启动",
   "settings.hotkey": "快捷键",
   "settings.clearCache": "清除浏览器缓存",
+  "settings.clearCacheDone": "浏览器缓存已清除",
   "errors.unsupportedPlatform": "不支持的 AI 平台"
 }
