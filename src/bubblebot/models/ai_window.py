@@ -326,11 +326,12 @@ class WindowManager:
     @classmethod
     def from_dict(cls, data: Dict) -> 'WindowManager':
         """从字典创建实例"""
+        # 默认不限制窗口数量：当配置缺失时，将上限设为 None
         instance = cls(
             windows={},
             active_window_id=data.get("active_window_id"),
-            max_windows_per_platform=data.get("max_windows_per_platform", 5),
-            max_total_windows=data.get("max_total_windows", 5)
+            max_windows_per_platform=data.get("max_windows_per_platform", None),
+            max_total_windows=data.get("max_total_windows", None)
         )
         
         # 加载窗口数据

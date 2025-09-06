@@ -233,17 +233,12 @@ class NavigationController(NSObject):
         return _t('app.name')
     
     def _get_platform_display_name(self, platform_id: str) -> str:
-        """获取平台显示名称"""
-        platform_names = {
-            "openai": "ChatGPT",
-            "gemini": "Gemini", 
-            "grok": "Grok",
-            "claude": "Claude",
-            "deepseek": "DeepSeek",
-            "zai": "ZAI",
-            "qwen": "通义千问"
-        }
-        return platform_names.get(platform_id, platform_id.title())
+        """获取平台显示名称（i18n 简称）"""
+        try:
+            from ..i18n import t as _t
+            return _t(f'platform.{platform_id}', default=platform_id.title())
+        except Exception:
+            return platform_id.title()
     
     def handle_ai_selector_change(self, platform_id: str, window_id: Optional[str] = None):
         """

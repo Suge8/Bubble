@@ -18,6 +18,7 @@ class PlatformType(Enum):
     DEEPSEEK = "deepseek"
     ZAI = "zai"
     QWEN = "qwen"
+    KIMI = "kimi"
 
 
 @dataclass
@@ -40,8 +41,6 @@ class AIServiceConfig:
         """初始化后的验证"""
         if self.max_windows < 1:
             raise ValueError("max_windows必须大于0")
-        if self.max_windows > 5:
-            raise ValueError("max_windows不能超过5")
     
     def to_dict(self) -> Dict:
         """转换为字典格式"""
@@ -83,6 +82,8 @@ class PlatformConfig:
     default_platform: Optional[str] = None
     enabled_platforms: List[str] = field(default_factory=list)
     max_total_platforms: int = 7
+    # None 表示启用平台数量不限制
+    max_enabled_platforms: Optional[int] = None
     
     def __post_init__(self):
         """初始化默认平台配置"""
@@ -129,17 +130,24 @@ class PlatformConfig:
             ),
             AIServiceConfig(
                 platform_id="zai",
-                name="Zai",
-                url="https://zai.chat",
-                display_name="Zai Chat", 
+                name="GLM",
+                url="https://chat.z.ai/",
+                display_name="GLM", 
                 description="智能对话AI平台"
             ),
             AIServiceConfig(
                 platform_id="qwen",
                 name="Qwen", 
-                url="https://qwen.chat",
-                display_name="通义千问",
+                url="https://chat.qwen.ai/",
+                display_name="Qwen",
                 description="阿里云的大语言模型"
+            ),
+            AIServiceConfig(
+                platform_id="kimi",
+                name="Kimi",
+                url="https://www.kimi.com/",
+                display_name="Kimi",
+                description="Moonshot AI 的 Kimi"
             )
         ]
         
@@ -206,7 +214,8 @@ class PlatformConfig:
             return False
             
         if platform_id not in self.enabled_platforms:
-            if len(self.enabled_platforms) >= 5:  # 最多5个启用平台
+            # 当设置了上限时才进行限制检查；None 表示不限制
+            if isinstance(self.max_enabled_platforms, int) and len(self.enabled_platforms) >= self.max_enabled_platforms:
                 return False
             self.enabled_platforms.append(platform_id)
             self.platforms[platform_id].enabled = True

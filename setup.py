@@ -35,6 +35,7 @@ OPTIONS = {
     # Explicitly copy image assets to app Resources for NSBundle lookups
     "resources": [
         "src/bubblebot/logo",
+        "src/bubblebot/assets/icons",
     ],
     "includes": [],
     # Exclude build-time tooling that can cause duplicate dist-info when collected
@@ -69,6 +70,7 @@ setup(
         "bubblebot": [
             "logo/*",
             "logo/icon.iconset/*",
+            "assets/icons/*",
             "i18n/*.json",
             "about/*.txt",
         ]

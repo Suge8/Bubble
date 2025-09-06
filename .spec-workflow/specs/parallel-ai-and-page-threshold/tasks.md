@@ -1,6 +1,6 @@
 # 任务清单（Tasks）
 
-- [-] 1. 取消 5 个页面上限（全局/单平台）
+- [x] 1. 取消 5 个页面上限（全局/单平台）
   - 文件：`src/bubblebot/models/ai_window.py`
   - 修改 `WindowManager`：
     - 将 `max_total_windows` 与 `max_windows_per_platform` 取消限制（可置为 `None` 或使用足够大的默认值并在逻辑中忽略）。

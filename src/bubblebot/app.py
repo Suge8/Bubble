@@ -203,6 +203,7 @@ class PointerButton(NSButton):
             self._animate_layer("transform.scale", None, 1.0)
             self._animate_layer("shadowOpacity", None, 0.0)
             self.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.05).CGColor())
+            self._bg_set(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.90).CGColor(), 0.15)
         except Exception:
             pass
 
@@ -270,6 +271,7 @@ class BackPointerButton(PointerButton):
     def mouseEntered_(self, event):
         objc.super(BackPointerButton, self).mouseEntered_(event)
         try:
+            # 与下拉框背景一致：白色 + 透明度变化
             self._bg_set(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.95).CGColor(), 0.25)
         except Exception:
             pass
@@ -315,6 +317,8 @@ class BackPointerButton(PointerButton):
             self._animate_layer("transform.scale", None, 1.02)
             self._animate_layer("shadowOpacity", None, 0.22)
             self.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10).CGColor())
+            # 同步圆形背景为白色系（与下拉一致）
+            self._bg_set(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.95).CGColor(), 0.25)
         except Exception:
             pass
 
@@ -366,6 +370,10 @@ class AppDelegate(NSObject):
         self._error_label = None
         self.window_initialized = False
         self._suppress_ai_action = False
+        # 抑制下一次骨架屏显示（用于主页刷新等场景）
+        self._skeleton_suppress_next = False
+        # 抑制直到完成（用于整个主页加载生命周期，避免双事件触发闪烁）
+        self._skeleton_suppress_until_finish = False
         return self
 
     # -------- Language: initial apply and runtime changes --------
@@ -1195,7 +1203,8 @@ class AppDelegate(NSObject):
                 self.back_button_bg = NSView.alloc().initWithFrame_(NSMakeRect(bx, by, diameter, diameter))
                 self.back_button_bg.setWantsLayer_(True)
                 self.back_button_bg.layer().setCornerRadius_(diameter/2)
-                self.back_button_bg.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9).CGColor())
+                # 与下拉框背景一致（白色+透明度）
+                self.back_button_bg.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.90).CGColor())
                 self.back_button_bg.layer().setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0).CGColor())
                 self.back_button_bg.layer().setBorderWidth_(1.0)
                 try:
@@ -1249,6 +1258,8 @@ class AppDelegate(NSObject):
 
         # 预创建骨架屏视图（用于页面加载中展示）
         self._ensure_skeleton_view()
+
+        # 图标使用随包资源（assets/icons），不依赖联网与运行时生成
 
         # Set up script message handler for background color changes
         configuration = self.webview.configuration()
@@ -1872,18 +1883,29 @@ class AppDelegate(NSObject):
                 if action == "setDefault" and self.homepage_manager:
                     self.homepage_manager.set_default_ai(platform_id)
                     self._refresh_homepage()
-                    # 同步顶栏
-                    self._populate_ai_selector()
+                    # 保持下拉框与主页一致
+                    try:
+                        self._set_ai_selector_to_home()
+                    except Exception:
+                        pass
                     return
                 if action == "removePlatform" and self.homepage_manager:
                     self.homepage_manager.remove_platform(platform_id)
-                    self._refresh_homepage()
-                    self._populate_ai_selector()
+                    # 无刷新更新行状态 + 下拉实时同步
+                    self._update_homepage_platform_active(platform_id, False)
+                    try:
+                        self._set_ai_selector_to_home()
+                    except Exception:
+                        pass
                     return
                 if action == "addPlatform" and self.homepage_manager:
                     self.homepage_manager.add_platform(platform_id)
-                    self._refresh_homepage()
-                    self._populate_ai_selector()
+                    # 无刷新更新行状态 + 下拉实时同步
+                    self._update_homepage_platform_active(platform_id, True)
+                    try:
+                        self._set_ai_selector_to_home()
+                    except Exception:
+                        pass
                     return
                 if action == "addWindow" and self.homepage_manager:
                     # 为平台新增页面实例（默认常驻；超过5个将提示内存警告气泡）
@@ -1891,9 +1913,9 @@ class AppDelegate(NSObject):
                     new_id = str(uuid4())
                     ok = self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
                     if ok:
-                        # 刷新主页并保持下拉为“主页”，不导航
+                        # 无刷新更新主页行的窗口气泡 + 下拉实时同步
+                        self._update_homepage_window_count(platform_id)
                         try:
-                            self._refresh_homepage()
                             self._set_ai_selector_to_home()
                         except Exception:
                             pass
@@ -1913,8 +1935,12 @@ class AppDelegate(NSObject):
                     if platform_id and wid:
                         ok = self.homepage_manager.remove_platform_window(platform_id, wid)
                         if ok:
-                            self._refresh_homepage()
-                            self._populate_ai_selector()
+                            # 无刷新更新主页行的窗口气泡 + 下拉实时同步
+                            self._update_homepage_window_count(platform_id)
+                            try:
+                                self._set_ai_selector_to_home()
+                            except Exception:
+                                pass
                             try:
                                 # 移除不触发提示，仅更新 last 计数供后续参考
                                 self._page_count_last = max(0, int(self.homepage_manager.get_total_window_count()))
@@ -2162,18 +2188,17 @@ class AppDelegate(NSObject):
             # 基于窗口实例填充；同平台多个实例用序号
             for pid, info in enabled.items():
                 # 使用短名称
-                short_map = {
-                    'openai': 'ChatGPT',
-                    'gemini': 'Gemini',
-                    'grok': 'Grok',
-                    'claude': 'Claude',
-                    'deepseek': 'DeepSeek',
-                    'zai': 'GLM',
-                    'qwen': 'Qwen',
-                    'mistral': 'Mistral',
-                    'perplexity': 'Perplexity',
-                }
-                display_base = short_map.get(pid, info.get('display_name', pid.title()))
+                # 本地化简名
+                try:
+                    display_base = self._i18n_or_default(f'platform.{pid}', info.get('display_name', pid.title()))
+                except Exception:
+                    display_base = info.get('display_name', pid.title())
+                # 特殊：mistral/perplexity 仅首字母大写
+                try:
+                    if pid in ("mistral", "perplexity"):
+                        display_base = str(display_base).capitalize()
+                except Exception:
+                    pass
                 win_map = {}
                 try:
                     win_map = self.homepage_manager.get_platform_windows(pid)
@@ -2193,10 +2218,14 @@ class AppDelegate(NSObject):
                         title = display_base if idx == 1 else f"{display_base} {idx}"
                         self._ai_selector_add_item(title, pid, wid)
 
-        # 如果最终没有任何选项：隐藏顶栏
+        # 如果最终没有任何选项：放置占位“主页”项，保持顶部栏存在
         if self.ai_selector.numberOfItems() == 0:
-            self._update_ai_selector_ui(False)
-            return
+            try:
+                self.ai_selector.addItemWithTitle_(_t('nav.home'))
+                self.ai_selector_map[0] = {'platform_id': None, 'window_id': None}
+                self.ai_selector.selectItemAtIndex_(0)
+            except Exception:
+                pass
 
         # 设置默认选择
         # 在填充期间抑制动作回调，避免误触发导航
@@ -2355,7 +2384,7 @@ class AppDelegate(NSObject):
     # 取消下拉菜单委托相关逻辑，稳定优先
 
     def _ai_selector_add_item(self, title, platform_id, window_id):
-        """辅助：为下拉框添加带元数据的项。"""
+        """辅助：为下拉框添加带元数据的项，并设置图标。"""
         self.ai_selector.addItemWithTitle_(title)
         index = self.ai_selector.numberOfItems() - 1
         try:
@@ -2368,16 +2397,97 @@ class AppDelegate(NSObject):
             }
         except Exception:
             pass
+        # 设置菜单项图标
+        try:
+            it = self.ai_selector.itemAtIndex_(index)
+            if it is not None and platform_id:
+                url = self._get_platform_url(platform_id)
+                img = self._get_favicon_image(platform_id, url)
+                if img is not None:
+                    it.setImage_(img)
+        except Exception:
+            pass
+
+    def _get_platform_url(self, platform_id):
+        # 从 HomepageManager 获取
+        try:
+            if self.homepage_manager:
+                allp = self.homepage_manager.get_available_platforms()
+                if platform_id in allp:
+                    return allp[platform_id].get('url')
+        except Exception:
+            pass
+        # 从 PlatformManager 获取
+        try:
+            if self.platform_manager:
+                p = self.platform_manager.get_platform(platform_id)
+                if p:
+                    return p.url
+        except Exception:
+            pass
+        # 兜底映射
+        return {
+            "openai": "https://chat.openai.com",
+            "gemini": "https://gemini.google.com",
+            "grok": "https://grok.com",
+            "claude": "https://claude.ai/chat",
+            "deepseek": "https://chat.deepseek.com",
+            "zai": "https://chat.z.ai/",
+            "qwen": "https://chat.qwen.ai/",
+            "mistral": "https://chat.mistral.ai",
+            "perplexity": "https://www.perplexity.ai",
+            "kimi": "https://www.kimi.com/",
+        }.get(platform_id)
+
+    def _get_favicon_image(self, platform_id, url):
+        try:
+            cache = getattr(self, '_ai_selector_icon_cache', None)
+            if isinstance(cache, dict) and platform_id in cache:
+                return cache.get(platform_id)
+            # 仅使用随包本地图标（assets/icons/<id>.png）；不做联网与运行时生成
+            img = None
+            # 1) 尝试读取打包资源 assets/icons/<id>.png
+            try:
+                bundle = NSBundle.mainBundle()
+                base_dir = bundle.resourcePath()
+                if base_dir:
+                    p = os.path.join(str(base_dir), 'assets', 'icons', f'{platform_id}.png')
+                    if os.path.exists(p):
+                        img = NSImage.alloc().initWithContentsOfFile_(p)
+            except Exception:
+                img = None
+            # 1b) 开发模式：src/bubblebot/assets/icons
+            if img is None:
+                try:
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    p = os.path.join(script_dir, 'assets', 'icons', f'{platform_id}.png')
+                    if os.path.exists(p):
+                        img = NSImage.alloc().initWithContentsOfFile_(p)
+                except Exception:
+                    img = None
+            if img is not None:
+                try:
+                    img.setSize_(NSSize(16, 16))
+                except Exception:
+                    pass
+                try:
+                    self._ai_selector_icon_cache[platform_id] = img
+                except Exception:
+                    pass
+            return img
+        except Exception:
+            return None
 
     def _update_ai_selector_ui(self, visible):
         """更新AI选择器显示状态（顶部栏）/内部实现"""
         try:
             # 顶栏保持显示，用于拖拽/返回/主页标签
             if self.ai_selector:
-                self.ai_selector.setHidden_(not visible)
+                # 永远显示，不随页面变化隐藏
+                self.ai_selector.setHidden_(False)
                 # 同步背景容器
                 if hasattr(self, 'selector_bg') and self.selector_bg:
-                    self.selector_bg.setHidden_(not visible)
+                    self.selector_bg.setHidden_(False)
             # WebView 不调整高度（顶栏悬浮覆盖）
         except Exception as e:
             print(f"DEBUG: update_ai_selector_visibility 异常: {e}")
@@ -2410,7 +2520,14 @@ class AppDelegate(NSObject):
         """导航开始提交时调用"""
         try:
             print("DEBUG: WKWebView didCommitNavigation")
-            self._show_skeleton_overlay()
+            if getattr(self, '_skeleton_suppress_until_finish', False):
+                # 抑制到完成
+                pass
+            elif getattr(self, '_skeleton_suppress_next', False):
+                # 一次性抑制骨架屏
+                self._skeleton_suppress_next = False
+            else:
+                self._show_skeleton_overlay()
         except Exception:
             pass
 
@@ -2423,7 +2540,14 @@ class AppDelegate(NSObject):
                 self._hide_error_overlay()
             except Exception:
                 pass
-            self._show_skeleton_overlay()
+            if getattr(self, '_skeleton_suppress_until_finish', False):
+                # 抑制到完成
+                pass
+            elif getattr(self, '_skeleton_suppress_next', False):
+                # 一次性抑制骨架屏
+                self._skeleton_suppress_next = False
+            else:
+                self._show_skeleton_overlay()
         except Exception:
             pass
     
@@ -2455,6 +2579,11 @@ class AppDelegate(NSObject):
             self._hide_skeleton_overlay()
         except Exception:
             pass
+        try:
+            # 结束全程抑制
+            self._skeleton_suppress_until_finish = False
+        except Exception:
+            pass
         # 成功加载后隐藏错误提示
         try:
             self._hide_error_overlay()
@@ -2466,6 +2595,10 @@ class AppDelegate(NSObject):
         print(f"导航失败: {error}")
         try:
             self._hide_skeleton_overlay()
+        except Exception:
+            pass
+        try:
+            self._skeleton_suppress_until_finish = False
         except Exception:
             pass
         try:
@@ -2484,6 +2617,10 @@ class AppDelegate(NSObject):
             pass
         try:
             self._hide_skeleton_overlay()
+        except Exception:
+            pass
+        try:
+            self._skeleton_suppress_until_finish = False
         except Exception:
             pass
         try:
@@ -2508,6 +2645,13 @@ class AppDelegate(NSObject):
                 self._hide_skeleton_overlay()
             except Exception:
                 pass
+            # 主页加载不显示骨架屏
+            try:
+                # 抑制整个加载生命周期，避免 didStart/didCommit 双事件造成闪烁
+                self._skeleton_suppress_next = True
+                self._skeleton_suppress_until_finish = True
+            except Exception:
+                pass
             html_content = self.homepage_manager.show_homepage()
             self.webview.loadHTMLString_baseURL_(html_content, None)
             try:
@@ -2520,6 +2664,7 @@ class AppDelegate(NSObject):
                 self._set_ai_selector_to_home()
             except Exception:
                 pass
+            # 已禁用联网图标下载：使用离线生成的字母图标，无需预取
             print("主页已加载")
 
     # 刷新主页
@@ -2527,6 +2672,62 @@ class AppDelegate(NSObject):
         """刷新主页内容"""
         if self.navigation_controller and self.navigation_controller.current_page == "homepage":
             self._load_homepage()
+
+    # ---- 无刷新更新主页行元素（后台加载/不闪烁） ----
+    def _js_eval(self, script: str):
+        try:
+            if self.webview:
+                self.webview.evaluateJavaScript_completionHandler_(script, None)
+        except Exception:
+            pass
+
+    def _update_homepage_platform_active(self, platform_id: str, active: bool):
+        """切换某平台的 active 状态 + 显隐右侧按钮（无刷新）。"""
+        if not getattr(self, 'last_loaded_is_homepage', False):
+            return
+        active_js = 'true' if active else 'false'
+        inactive_js = 'false' if active else 'true'
+        js = f"""
+            (function(){{
+                const row = document.querySelector('.hrow[data-pid="{platform_id}"]');
+                if (!row) return;
+                row.classList.toggle('active', {active_js});
+                const btn = row.querySelector('button.more'); if (btn) btn.classList.toggle('hidden', {inactive_js});
+                if (!{active_js}) {{ const b = row.querySelector('.bubble'); if (b) {{ b.textContent='0'; b.classList.add('hidden'); }} }}
+            }})();
+        """
+        self._js_eval(js)
+
+    def _update_homepage_window_count(self, platform_id: str):
+        """更新指定平台多页面气泡数量与 data-windows（无刷新）。"""
+        if not getattr(self, 'last_loaded_is_homepage', False):
+            return
+        try:
+            win_map = self.homepage_manager.get_platform_windows(platform_id) if self.homepage_manager else {}
+        except Exception:
+            win_map = {}
+        items = list(win_map.items())  # (window_id, info)
+        try:
+            items.sort(key=lambda kv: kv[1].get('createdAt', ''))
+        except Exception:
+            pass
+        # 构造 [{id, idx}]
+        idx_items = []
+        for idx, (wid, _) in enumerate(items, start=1):
+            idx_items.append({'id': wid, 'idx': idx})
+        import json as _json
+        js_data = _json.dumps(idx_items)
+        count = len(idx_items)
+        js = f"""
+            (function(){{
+                const row = document.querySelector('.hrow[data-pid="{platform_id}"]');
+                if (!row) return;
+                row.dataset.windows = '{js_data.replace("'", "\\'")}';
+                const b = row.querySelector('.bubble');
+                if (b) {{ b.textContent = String({count}); if ({count} > 1) b.classList.remove('hidden'); else b.classList.add('hidden'); }}
+            }})();
+        """
+        self._js_eval(js)
 
     # 加载AI服务
     def _load_ai_service(self, platform_id):
@@ -2541,10 +2742,11 @@ class AppDelegate(NSObject):
             "grok": "https://grok.com",
             "claude": "https://claude.ai/chat",
             "deepseek": "https://chat.deepseek.com",
-            "zai": "https://chatglm.cn",
-            "qwen": "https://qwen.chat",
+            "zai": "https://chat.z.ai/",
+            "qwen": "https://chat.qwen.ai/",
             "mistral": "https://chat.mistral.ai",
-            "perplexity": "https://www.perplexity.ai"
+            "perplexity": "https://www.perplexity.ai",
+            "kimi": "https://www.kimi.com/"
         }
 
         service_url = ai_services.get(platform_id)
@@ -2773,6 +2975,102 @@ class AppDelegate(NSObject):
         except Exception:
             pass
 
+    # ---- 平台图标预取与主页更新 ----
+    def _prefetch_platform_icons(self):
+        try:
+            import threading
+            def worker():
+                try:
+                    platforms = {}
+                    if self.homepage_manager:
+                        try:
+                            platforms = self.homepage_manager.get_available_platforms()
+                        except Exception:
+                            platforms = {}
+                    for pid, info in platforms.items():
+                        url = info.get('url') if isinstance(info, dict) else None
+                        ok = self._download_and_cache_icon(pid, url)
+                        if ok:
+                            # 如果此时仍在主页，回填该行的图标为本地缓存
+                            self._update_homepage_icon(pid)
+                except Exception:
+                    pass
+            threading.Thread(target=worker, daemon=True).start()
+        except Exception:
+            pass
+
+    def _download_and_cache_icon(self, platform_id: str, url: str) -> bool:
+        try:
+            if not url:
+                return False
+            from urllib.parse import urlparse
+            host = ''
+            try:
+                host = urlparse(url).netloc
+            except Exception:
+                pass
+            s2 = f"https://www.google.com/s2/favicons?sz=64&domain={host}" if host else None
+            from .components.config_manager import ConfigManager as _CM
+            icon_dir = os.path.join(os.path.dirname(_CM.config_path()), 'icons')
+            os.makedirs(icon_dir, exist_ok=True)
+            # 若已存在缓存，跳过
+            for ext in ('png', 'ico'):
+                p = os.path.join(icon_dir, f"{platform_id}.{ext}")
+                if os.path.exists(p):
+                    return True
+            # 优先下载 s2 PNG
+            data = None
+            if s2:
+                try:
+                    n = NSURL.URLWithString_(s2)
+                    data = NSData.dataWithContentsOfURL_(n)
+                    if data:
+                        fp = os.path.join(icon_dir, f"{platform_id}.png")
+                        data.writeToFile_atomically_(fp, True)
+                        return True
+                except Exception:
+                    data = None
+            # 退回网站 favicon
+            try:
+                fav = url.rstrip('/') + '/favicon.ico'
+                n = NSURL.URLWithString_(fav)
+                data = NSData.dataWithContentsOfURL_(n)
+                if data:
+                    fp = os.path.join(icon_dir, f"{platform_id}.ico")
+                    data.writeToFile_atomically_(fp, True)
+                    return True
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return False
+
+    def _update_homepage_icon(self, platform_id: str):
+        if not getattr(self, 'last_loaded_is_homepage', False):
+            return
+        try:
+            from .components.config_manager import ConfigManager as _CM
+            icon_dir = os.path.join(os.path.dirname(_CM.config_path()), 'icons')
+            icon_path = None
+            for ext in ('png', 'ico'):
+                p = os.path.join(icon_dir, f"{platform_id}.{ext}")
+                if os.path.exists(p):
+                    icon_path = 'file://' + p
+                    break
+            if not icon_path:
+                return
+            js = f"""
+                (function(){{
+                    const row = document.querySelector('.hrow[data-pid="{platform_id}"]');
+                    if (!row) return;
+                    const img = row.querySelector('.title img.icon');
+                    if (img) img.src = '{icon_path.replace("'", "\\'")}';
+                }})();
+            """
+            self._js_eval(js)
+        except Exception:
+            pass
+
     # 错误覆盖层按钮事件
     def errorRetry_(self, sender):
         try:
@@ -2839,10 +3137,11 @@ class AppDelegate(NSObject):
     def update_back_button_visibility(self, should_show):
         """更新返回按钮显示状态（左上角图标）"""
         try:
+            # 始终显示返回按钮及其背景，保持功能不消失
             if hasattr(self, 'back_button') and self.back_button:
-                self.back_button.setHidden_(not should_show)
+                self.back_button.setHidden_(False)
             if hasattr(self, 'back_button_bg') and self.back_button_bg:
-                self.back_button_bg.setHidden_(not should_show)
+                self.back_button_bg.setHidden_(False)
         except Exception as e:
             print(f"DEBUG: update_back_button_visibility 异常: {e}")
 

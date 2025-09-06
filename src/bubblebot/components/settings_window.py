@@ -51,6 +51,11 @@ from AppKit import (
 )
 
 from Foundation import NSObject, NSAttributedString
+try:
+    from Quartz.CoreAnimation import CAGradientLayer, CATextLayer
+except Exception:
+    CAGradientLayer = None
+    CATextLayer = None
 
 from ..i18n import t as _t, get_language as _get_lang
 from ..utils import login_items
@@ -265,18 +270,23 @@ class SettingsWindow(NSObject):
         self.launch_checkbox = None
         self.hotkey_label = None
         self.hotkey_value = None
+        self.hotkey_box = None
         self.hotkey_button = None
         self.clear_cache_button = None
         self.save_button = None
         self.cancel_button = None
         self.header_logo_view = None
+        self.header_art_label = None
         self.header_title_label = None
+        self.header_art_view = None
         self.bg_blur = None
         return self
 
     def _create_window(self):
         # Borderless settings panel window with large rounded corners
-        rect = NSMakeRect(0, 0, 460, 320)
+        # Increase width to add more horizontal whitespace while keeping content centered
+        # Increase bottom whitespace (about 412 height as requested +12)
+        rect = NSMakeRect(0, 0, 560, 412)
         class SettingsPanelWindow(NSWindow):
             def canBecomeKeyWindow(self):
                 return True
@@ -410,22 +420,113 @@ class SettingsWindow(NSObject):
         # Header: centered logo only (no title)
         logo_img = self._load_logo_for_appearance()
         card_bounds = self.card.bounds()
-        logo_size = 40
+        # Enlarge logo a bit further (~1.2x again)
+        logo_size = 70
         top_margin = 16
         if logo_img is not None:
-            lx = (card_bounds.size.width - logo_size) / 2
+            lx = (card_bounds.size.width - logo_size) / 2 - 52  # shift logo left further by 20
             ly = card_bounds.size.height - top_margin - logo_size
             self.header_logo_view = add_image_view(logo_img, lx, ly, logo_size, logo_size)
+            # Artistic "Bubble" text (gradient pink, bold, right of logo)
+            try:
+                art_h = 34
+                art_w = 220
+                art_x = lx + logo_size + 12
+                art_y = ly + (logo_size - art_h) / 2
+                self.header_art_view = NSView.alloc().initWithFrame_(NSMakeRect(art_x, art_y, art_w, art_h))
+                self.header_art_view.setWantsLayer_(True)
+                if CAGradientLayer and CATextLayer:
+                    grad = CAGradientLayer.layer()
+                    grad.setFrame_(self.header_art_view.bounds())
+                    # Pink gradient colors
+                    c1 = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.52, 0.82, 1.0).CGColor()
+                    c2 = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.29, 0.62, 1.0).CGColor()
+                    c3 = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.18, 0.46, 1.0).CGColor()
+                    grad.setColors_([c1, c2, c3])
+                    grad.setStartPoint_((0.0, 0.5))
+                    grad.setEndPoint_((1.0, 0.5))
+                    # Text mask layer
+                    tl = CATextLayer.layer()
+                    tl.setString_("Bubble")
+                    try:
+                        tl.setAlignmentMode_("left")
+                    except Exception:
+                        pass
+                    try:
+                        # Prefer a cute, heavier font family; fallback handled by system
+                        tl.setFont_("ChalkboardSE-Bold")
+                        tl.setFontSize_(30.0)
+                    except Exception:
+                        pass
+                    try:
+                        # Avoid blurry text on Retina
+                        from AppKit import NSScreen
+                        scale = NSScreen.mainScreen().backingScaleFactor() if NSScreen.mainScreen() else 2.0
+                        tl.setContentsScale_(scale)
+                    except Exception:
+                        pass
+                    tl.setFrame_(self.header_art_view.bounds())
+                    # Apply mask
+                    grad.setMask_(tl)
+                    self.header_art_view.layer().addSublayer_(grad)
+                else:
+                    # Fallback: solid pink bold label inside art view (correctly positioned)
+                    lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, art_w, art_h))
+                    lbl.setBezeled_(False)
+                    lbl.setDrawsBackground_(False)
+                    lbl.setEditable_(False)
+                    lbl.setSelectable_(False)
+                    lbl.setStringValue_("Bubble")
+                    try:
+                        lbl.setAlignment_(NSTextAlignmentLeft)
+                    except Exception:
+                        pass
+                    # Choose a cute bold font chain
+                    try:
+                        font = (
+                            NSFont.fontWithName_size_("Chalkboard SE Bold", 30)
+                            or NSFont.fontWithName_size_("ChalkboardSE-Bold", 30)
+                            or NSFont.fontWithName_size_("MarkerFelt-Wide", 30)
+                            or NSFont.fontWithName_size_("Noteworthy-Bold", 30)
+                            or NSFont.fontWithName_size_("AvenirNext-Heavy", 30)
+                            or NSFont.fontWithName_size_("Helvetica-Bold", 30)
+                            or NSFont.boldSystemFontOfSize_(28)
+                        )
+                        if font:
+                            lbl.setFont_(font)
+                    except Exception:
+                        pass
+                    try:
+                        lbl.setTextColor_(NSColor.systemPinkColor())
+                    except Exception:
+                        pass
+                    try:
+                        self.header_art_view.addSubview_(lbl)
+                    except Exception:
+                        pass
+                self.card.addSubview_(self.header_art_view)
+            except Exception:
+                pass
         # No title label
 
-        # Layout constants
+        # Layout constants — revert global right shift to original modest values
         pad_x = 24  # left padding for labels/checkbox
-        group_shift_x = 10  # slight right shift for centered groups
+        # Keep centered groups without extra right shift
+        group_shift_x = 0
         # Language selector + uniform row centers (equal spacing)
-        row_gap = 52
-        language_center = (ly - 36) if logo_img is not None else (card_bounds.size.height - 96)
+        row_gap = 72  # increase each inter-row gap by +20
+        # Move content slightly downward to compensate the larger logo
+        content_down_shift = 12
+        language_center = (ly - 36 - content_down_shift) if logo_img is not None else (card_bounds.size.height - 96 - content_down_shift)
         self.lang_label = add_label(_t('settings.language'), pad_x, language_center - 11, 120, 22)
-        self.lang_popup = BBPointerPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(pad_x + 140, language_center - 17, 220, 34), False)
+        # Language dropdown: center align around the content center and slightly shorten width
+        content_center_x = card_bounds.size.width / 2 + group_shift_x
+        lang_w = 150  # reduce to three-quarters of previous width
+        # Move dropdown 45px left from centered position (previous 40 + 5)
+        self.lang_popup = BBPointerPopUpButton.alloc().initWithFrame_pullsDown_(
+            # Adjust: move right by +48 relative to current => net offset = -45 + 48 = +3
+            NSMakeRect(content_center_x - lang_w / 2 + 3, language_center - 17, lang_w, 34), False
+        )
         self.lang_popup.addItemWithTitle_("English")
         self.lang_popup.addItemWithTitle_("中文")
         self.lang_popup.addItemWithTitle_("日本語")
@@ -448,6 +549,17 @@ class SettingsWindow(NSObject):
                 self.lang_popup.setFont_(NSFont.systemFontOfSize_(16))
             except Exception:
                 pass
+            # Center the selected title text within the popup
+            try:
+                cell = self.lang_popup.cell()
+                if cell is not None:
+                    cell.setAlignment_(NSTextAlignmentCenter)
+            except Exception:
+                try:
+                    # Fallback: attempt alignment on control if supported
+                    self.lang_popup.setAlignment_(NSTextAlignmentCenter)
+                except Exception:
+                    pass
         except Exception:
             pass
         self.card.addSubview_(self.lang_popup)
@@ -477,12 +589,59 @@ class SettingsWindow(NSObject):
         # Hotkey row — center aligned using row centers
         hotkey_center = language_center - row_gap
         self.hotkey_label = add_label(_t('settings.hotkey'), pad_x, hotkey_center - 12, 80, 24)
-        # Center the value + button group horizontally, but avoid overlap with label area
-        group_w = 220 + 16 + 112
+        # Center the value + button group horizontally to the same center as language dropdown
+        # Create a bordered hotkey box (container) with a centered text label that resizes to content
+        hv_w = 160  # temporary width; will be replaced by dynamic sizing
+        spacing_hotkey = 16  # revert to modest default gap
+        group_w = hv_w + spacing_hotkey + 112
         min_left = pad_x + 80 + 12
-        hv_x = max(min_left, (card_bounds.size.width - group_w) / 2 + group_shift_x)
-        self.hotkey_value = add_label("", hv_x, hotkey_center - 12, 220, 24)
-        self.hotkey_button = add_button(_t('button.change'), hv_x + 220 + 16, hotkey_center - 17, 112, 34)
+        hv_base = max(min_left, (card_bounds.size.width - group_w) / 2 + group_shift_x)
+        # Store layout anchors for dynamic updates
+        self._hotkey_group_base_x = hv_base
+        self._hotkey_value_y = hotkey_center - 12
+        self._hotkey_button_y = hotkey_center - 17
+        self._hotkey_right_shift = 0  # value starts at group base; overall group stays centered
+        self._hotkey_spacing = spacing_hotkey
+        hv_x_init = hv_base + self._hotkey_right_shift
+        # Create bordered container view
+        box_h = 28
+        # Slight upward offset so the text feels visually centered in the row
+        self._hotkey_box_y_offset = 3
+        self.hotkey_box = NSView.alloc().initWithFrame_(NSMakeRect(hv_x_init, hotkey_center - box_h / 2 + self._hotkey_box_y_offset, hv_w, box_h))
+        try:
+            self.hotkey_box.setWantsLayer_(True)
+            # Full rounded corners
+            try:
+                self.hotkey_box.layer().setCornerRadius_(box_h / 2.0)
+            except Exception:
+                self.hotkey_box.layer().setCornerRadius_(6.0)
+            self.hotkey_box.layer().setBorderWidth_(1.0)
+            self.hotkey_box.layer().setBackgroundColor_(NSColor.clearColor().CGColor())
+            dark = self._is_dark()
+            border = (NSColor.whiteColor().colorWithAlphaComponent_(0.28) if dark else NSColor.blackColor().colorWithAlphaComponent_(0.22))
+            self.hotkey_box.layer().setBorderColor_(border.CGColor())
+        except Exception:
+            pass
+        self.card.addSubview_(self.hotkey_box)
+        # Inner centered text field
+        self.hotkey_value = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, hv_w, box_h))
+        self.hotkey_value.setBezeled_(False)
+        self.hotkey_value.setDrawsBackground_(False)
+        self.hotkey_value.setEditable_(False)
+        self.hotkey_value.setSelectable_(False)
+        try:
+            self.hotkey_value.setAlignment_(NSTextAlignmentCenter)
+            self.hotkey_value.setFont_(NSFont.systemFontOfSize_(16))
+            self.hotkey_value.setTextColor_(NSColor.labelColor())
+        except Exception:
+            pass
+        try:
+            self.hotkey_box.addSubview_(self.hotkey_value)
+        except Exception:
+            pass
+        # Place the Change button relative to the value so the gap equals spacing_hotkey
+        hotkey_button_x = hv_x_init + hv_w + spacing_hotkey
+        self.hotkey_button = add_button(_t('button.change'), hotkey_button_x, self._hotkey_button_y, 112, 34)
         try:
             self.hotkey_button.setStyleDark_(True)
         except Exception:
@@ -494,9 +653,9 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
 
-        # Clear cache — center aligned using row centers
+        # Clear cache — center aligned using row centers (reverted positioning)
         clear_center = hotkey_center - row_gap
-        cc_w, cc_h = 140, 34
+        cc_w, cc_h = 112, 34  # keep width, but center horizontally
         cc_x = (card_bounds.size.width - cc_w) / 2 + group_shift_x
         self.clear_cache_button = add_button(_t('settings.clearCache'), cc_x, clear_center - cc_h / 2, cc_w, cc_h)
         try:
@@ -506,14 +665,12 @@ class SettingsWindow(NSObject):
         self.clear_cache_button.setTarget_(self)
         self.clear_cache_button.setAction_("clearCache:")
 
-        # Save / Cancel — center aligned using row centers
+        # Save / Cancel — center aligned using row centers (reverted positioning)
         extra_bottom_gap = 12  # slightly larger gap between Clear and Save
         bottom_center = clear_center - (row_gap + extra_bottom_gap)
-        cancel_w, cancel_h = 92, 34
+        cancel_w, cancel_h = 104, 34
         save_w, save_h = 104, 34
-        pad = 16
-        spacing = 12
-        # Center the Save+Cancel group horizontally with slight right shift
+        spacing = 16
         group_w2 = save_w + spacing + cancel_w
         group_left = (card_bounds.size.width - group_w2) / 2 + group_shift_x
         save_x = group_left
@@ -541,13 +698,20 @@ class SettingsWindow(NSObject):
             self.cancel_button.setStyleDark_(True)
         except Exception:
             pass
+        # No extra alignment for Clear Cache; it remains centered above Save/Cancel
         # Launch at login aligned with Save/Cancel row center
         try:
-            self.launch_checkbox.setFrameOrigin_((16, bottom_center - 24 / 2))
+            self.launch_checkbox.setFrameOrigin_((pad_x, bottom_center - 24 / 2))
         except Exception:
             pass
 
         self._load_values_into_ui()
+
+        # After initial values are loaded, update hotkey layout to fit content
+        try:
+            self._update_hotkey_group_layout()
+        except Exception:
+            pass
 
     def _load_values_into_ui(self):
         # Language
@@ -578,6 +742,10 @@ class SettingsWindow(NSObject):
             fmt = getattr(self.app_delegate, '_format_launcher_hotkey', None)
             if callable(fmt):
                 self.hotkey_value.setStringValue_(fmt())
+                try:
+                    self._update_hotkey_group_layout()
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -741,6 +909,72 @@ class SettingsWindow(NSObject):
             fmt = getattr(self.app_delegate, '_format_launcher_hotkey', None)
             if callable(fmt):
                 self.hotkey_value.setStringValue_(fmt())
+                try:
+                    self._update_hotkey_group_layout()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _update_hotkey_group_layout(self):
+        """Dynamically size and position the hotkey value label and Change button.
+        - Tight border around the value that adapts to content length
+        - Keep Change button anchored while reducing gap
+        - Apply the right-shift requested for the value label only
+        """
+        if not (self.hotkey_box and self.hotkey_value and self.hotkey_button):
+            return
+        try:
+            # Measure text width with current font
+            text = self.hotkey_value.stringValue() or ""
+            try:
+                from AppKit import NSFontAttributeName
+                from Foundation import NSAttributedString
+                font = self.hotkey_value.font() or NSFont.systemFontOfSize_(16)
+                attr = {NSFontAttributeName: font}
+                measured = NSAttributedString.alloc().initWithString_attributes_(text, attr).size()
+                text_w = measured.width
+            except Exception:
+                text_w = max(60, min(len(text) * 9, 280))
+
+            # Align the hotkey box to Save button horizontally and match its width
+            # Fallback to defaults if save_button not available yet
+            try:
+                sf = self.save_button.frame() if self.save_button is not None else None
+            except Exception:
+                sf = None
+            save_x = sf.origin.x if sf is not None else max(16, self._hotkey_group_base_x)
+            save_w = sf.size.width if sf is not None else 104
+
+            hv_w = int(save_w)
+
+            # Update the bordered box frame around the text (with slight upward offset)
+            box_h = 28
+            # Move the hotkey box 32px left relative to Save button's left edge
+            hv_x = save_x - 32
+            hv_y = self._hotkey_value_y - (box_h - 24) / 2 + getattr(self, '_hotkey_box_y_offset', 0)
+            self.hotkey_box.setFrame_(NSMakeRect(hv_x, hv_y, hv_w, box_h))
+            try:
+                # Full rounded corners
+                self.hotkey_box.layer().setCornerRadius_(box_h / 2.0)
+            except Exception:
+                pass
+
+            # Center the text field inside the box both horizontally and vertically
+            lbl_x = 0
+            lbl_w = hv_w
+            lbl_h = 24
+            lbl_y = (box_h - lbl_h) / 2
+            self.hotkey_value.setFrame_(NSMakeRect(lbl_x, lbl_y, lbl_w, lbl_h))
+            try:
+                self.hotkey_value.setAlignment_(NSTextAlignmentCenter)
+            except Exception:
+                pass
+
+            # Reposition the Change button to the right of the box using the configured gap
+            hotkey_button_x = hv_x + hv_w + self._hotkey_spacing
+            self.hotkey_button.setFrameOrigin_((hotkey_button_x, self._hotkey_button_y))
+            # Do not reposition other buttons here (reverted to original behavior)
         except Exception:
             pass
 

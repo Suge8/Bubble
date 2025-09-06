@@ -75,9 +75,9 @@ class HomepageManager(NSObject):
                 "max_windows": 5
             },
             "zai": {
-                "name": "智谱 GLM",
-                "url": "https://chatglm.cn",
-                "display_name": "智谱 GLM",
+                "name": "GLM",
+                "url": "https://chat.z.ai/",
+                "display_name": "GLM",
                 "enabled": False,
                 "max_windows": 5
             },
@@ -97,8 +97,15 @@ class HomepageManager(NSObject):
             },
             "qwen": {
                 "name": "Qwen",
-                "url": "https://qwen.chat", 
-                "display_name": "阿里通义千问",
+                "url": "https://chat.qwen.ai/", 
+                "display_name": "Qwen",
+                "enabled": False,
+                "max_windows": 5
+            },
+            "kimi": {
+                "name": "Kimi",
+                "url": "https://www.kimi.com/",
+                "display_name": "Kimi",
                 "enabled": False,
                 "max_windows": 5
             }
@@ -165,7 +172,7 @@ class HomepageManager(NSObject):
                 # 首次启动，创建默认配置
                 self.user_config = {
                     "default_ai": None,  # 用户首次启动时需要选择
-                    "enabled_platforms": list(self.default_ai_platforms.keys())[:5],  # 默认启用前5个
+                    "enabled_platforms": [],  # 首次启动不启用任何平台
                     "window_positions": {},
                     "ui_preferences": {
                         "transparency": 1.0,
@@ -179,7 +186,7 @@ class HomepageManager(NSObject):
             print(f"加载用户配置失败，使用默认配置: {e}")
             self.user_config = {
                 "default_ai": None,
-                "enabled_platforms": list(self.default_ai_platforms.keys())[:5],
+                "enabled_platforms": [],  # 首次启动不启用任何平台
                 "window_positions": {},
                 "ui_preferences": {
                     "transparency": 1.0,
@@ -235,11 +242,7 @@ class HomepageManager(NSObject):
             return False
         
         if platform_id not in self.user_config.get("enabled_platforms", []):
-            # 检查是否超过最大窗口数限制
-            if len(self.user_config.get("enabled_platforms", [])) >= 5:
-                print("最多支持5个AI平台同时启用")
-                return False
-            
+            # 默认不限制启用平台数量
             self.user_config.setdefault("enabled_platforms", []).append(platform_id)
             self._save_user_config()
             return True
@@ -311,11 +314,7 @@ class HomepageManager(NSObject):
         platform_windows = self.user_config.setdefault("platform_windows", {})
         platform_windows.setdefault(platform_id, {})
         
-        # 检查该平台窗口数是否超过限制
-        if len(platform_windows[platform_id]) >= 5:
-            print(f"平台 {platform_id} 已达到最大窗口数限制(5)")
-            return False
-        
+        # 默认不限制同一平台窗口数量，由上层通过内存提示进行引导
         platform_windows[platform_id][window_id] = window_info
         self._save_user_config()
         return True
@@ -394,11 +393,60 @@ class HomepageManager(NSObject):
             is_on = pid in enabled
             wl = _windows_list(pid)
             wcnt = len(wl)
-            more_btn = '<button class="more">⋯</button>' if is_on else ''
-            bubble = ('<span class="bubble">'+str(wcnt)+'</span>') if wcnt>1 else ''
+            # 始终渲染按钮与气泡（隐藏时保留占位，避免布局抖动）
+            more_btn = f'<button class="more{("" if is_on else " hidden")}">⋯</button>'
+            bubble = f'<span class="bubble{("" if wcnt>1 else " hidden")}">{wcnt}</span>'
+            # 本地化名称（简洁）
+            try:
+                title_txt = _t(f'platform.{pid}', default=info.get('display_name') or info.get('name') or pid.title())
+            except Exception:
+                title_txt = info.get('display_name') or info.get('name') or pid.title()
+            # 特殊：mistral/perplexity 仅首字母大写
+            if pid in ("mistral", "perplexity"):
+                try:
+                    title_txt = str(title_txt).capitalize()
+                except Exception:
+                    pass
+            # 平台描述（优势）
+            _desc_defaults = {
+                'openai': '通用对话，生态丰富',
+                'gemini': '多模态理解与生成',
+                'grok': '实时信息与风趣回复',
+                'claude': '长文本与安全对话',
+                'deepseek': '高性价比与中文友好',
+                'zai': '中文理解与推理',
+                'qwen': '中文与工具调用',
+                'mistral': '轻量快速与高效',
+                'perplexity': '搜索增强问答',
+                'kimi': '长文档阅读与总结',
+            }
+            try:
+                sub_txt = _t(f'platform.desc.{pid}', default=_desc_defaults.get(pid, ''))
+            except Exception:
+                sub_txt = _desc_defaults.get(pid, '')
+            # icon：仅使用打包资源，转为 data URL（避免 WKWebView 对 file:// 的限制）
+            icon_src = ''
+            try:
+                import pkgutil, base64
+                data = pkgutil.get_data('bubblebot', f'assets/icons/{pid}.png')
+                if data:
+                    icon_src = 'data:image/png;base64,' + base64.b64encode(data).decode('ascii')
+            except Exception:
+                icon_src = ''
+            if not icon_src:
+                try:
+                    import base64
+                    base = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+                    p = os.path.join(base, 'assets', 'icons', f'{pid}.png')
+                    if os.path.exists(p):
+                        with open(p, 'rb') as f:
+                            icon_src = 'data:image/png;base64,' + base64.b64encode(f.read()).decode('ascii')
+                except Exception:
+                    icon_src = ''
+            icon_html = f"<img class=\"icon\" src=\"{icon_src}\" alt=\"\">" if icon_src else ""
             rows += f"""
             <div class=\"hrow{' active' if is_on else ''}\" data-pid=\"{pid}\" data-windows='{_json.dumps(wl)}'>
-              <div class=\"title\">{info['display_name']}</div>
+              <div class=\"title\">{icon_html} <span class=\"name\">{title_txt}</span><span class=\"desc\">{sub_txt}</span></div>
               <div class=\"right\">{bubble}{more_btn}</div>
             </div>
             """
@@ -414,13 +462,19 @@ class HomepageManager(NSObject):
                 * {{ box-sizing: border-box; }}
                 body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); }}
                 .list {{ max-width:740px; margin:0 auto; display:flex; flex-direction:column; gap:8px; }}
-                .hrow {{ display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 12px; cursor:pointer; transition: background .18s ease, box-shadow .18s ease, transform .18s ease; }}
-                .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); transform: translateY(-1px); }}
-                .hrow.active {{ border-color:#111; box-shadow:0 8px 22px rgba(0,0,0,.12) }}
-                .hrow .title {{ font-size:14px; font-weight:600; }}
-                .hrow .right {{ display:flex; align-items:center; gap:10px; }}
-                .hrow .more {{ width:26px; height:26px; border-radius:6px; border:1px solid var(--border); background:#fff; cursor:pointer; }}
-                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#111; color:#fff; font-size:12px; }}
+                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 12px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:min(70%, 560px); margin:0 auto; min-height:40px; will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; }}
+                .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); }}
+                .hrow.active {{ border-color:#111; box-shadow:0 0 0 2px rgba(17,17,17,.18); }}
+                .hrow .title {{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; flex:1; min-width:0; }}
+                .hrow .title .icon {{ width:18px; height:18px; border-radius:4px; object-fit:cover; }}
+                .hrow .title .name {{ display:inline-block; max-width:40%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+                .hrow .title .desc {{ margin-left:10px; font-weight:500; font-size:12px; color:#6b7280; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; text-align:center; }}
+                .hrow .right {{ display:flex; align-items:center; gap:10px; width:60px; justify-content:flex-end; }}
+                .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:6px; border:1px solid var(--border); background:#fff; cursor:pointer; }}
+                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#111; color:#fff; font-size:12px; }}
+                .hidden {{ visibility:hidden; opacity:0; }}
+                .ripple {{ position:absolute; border-radius:50%; transform:scale(0); background:rgba(0,0,0,.12); animation:ripple .45s ease-out; pointer-events:none; }}
+                @keyframes ripple {{ to {{ transform:scale(1); opacity:0; }} }}
                 .menu {{ position:absolute; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 12px 28px rgba(0,0,0,.16); padding:6px; display:none; }}
                 .menu .item {{ font-size:12px; padding:6px 10px; border-radius:6px; cursor:pointer; }}
                 .menu .item:hover {{ background:#f5f5f5; }}
@@ -450,10 +504,33 @@ class HomepageManager(NSObject):
                 const menu = $('#menu');
                 const pop = $('#popover');
                 $$('.hrow').forEach(row=>{
+                    // Ripple on mousedown
+                    row.addEventListener('mousedown', e=>{
+                        const rect = row.getBoundingClientRect();
+                        const ripple = document.createElement('span');
+                        const d = Math.max(rect.width, rect.height) * 1.2;
+                        ripple.className = 'ripple';
+                        ripple.style.width = ripple.style.height = d + 'px';
+                        ripple.style.left = (e.clientX - rect.left - d/2) + 'px';
+                        ripple.style.top = (e.clientY - rect.top - d/2) + 'px';
+                        row.appendChild(ripple);
+                        ripple.addEventListener('animationend', ()=> ripple.remove());
+                    }, {passive:true});
                     row.addEventListener('click', e=>{
                         if (e.target.classList.contains('more') || e.target.closest('button.more')) return;
                         const pid = row.dataset.pid;
-                        if (row.classList.contains('active')) post({action:'removePlatform', platformId: pid}); else post({action:'addPlatform', platformId: pid});
+                        // 先本地过渡高亮/取消，保持高度不变
+                        if (row.classList.contains('active')) {
+                            row.classList.remove('active');
+                            // 同步右侧控件（保留占位），避免移位
+                            const btn = row.querySelector('button.more'); if (btn) btn.classList.add('hidden');
+                            const b = row.querySelector('.bubble'); if (b) { b.textContent = '0'; b.classList.add('hidden'); }
+                            setTimeout(()=>post({action:'removePlatform', platformId: pid}), 120);
+                        } else {
+                            row.classList.add('active');
+                            const btn = row.querySelector('button.more'); if (btn) btn.classList.remove('hidden');
+                            setTimeout(()=>post({action:'addPlatform', platformId: pid}), 120);
+                        }
                     });
                     const btn = row.querySelector('button.more');
                     if (btn) {

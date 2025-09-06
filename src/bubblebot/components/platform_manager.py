@@ -458,11 +458,14 @@ class PlatformManager:
         all_platforms = self.get_all_platforms()
         enabled_platforms = self.get_enabled_platforms()
         
+        # 计算可用槽位（若无上限则为None）
+        max_enabled = getattr(self._platform_config, 'max_enabled_platforms', None)
+        enabled_slots = (max_enabled - len(enabled_platforms)) if isinstance(max_enabled, int) else None
         return {
             "total_platforms": len(all_platforms),
             "enabled_platforms": len(enabled_platforms),
             "available_slots": 7 - len(all_platforms),
-            "enabled_slots": 5 - len(enabled_platforms),
+            "enabled_slots": enabled_slots,
             "default_platform": self._platform_config.default_platform,
             "platforms_by_type": self._get_platforms_by_type()
         }
@@ -494,8 +497,9 @@ class PlatformManager:
             if len(all_platforms) > 7:
                 errors.append("平台总数超过了最大限制(7个)")
             
-            if len(enabled_platforms) > 5:
-                errors.append("启用的平台数量超过了最大限制(5个)")
+            max_enabled = getattr(self._platform_config, 'max_enabled_platforms', None)
+            if isinstance(max_enabled, int) and len(enabled_platforms) > max_enabled:
+                errors.append(f"启用的平台数量超过了最大限制({max_enabled}个)")
             
             # 检查默认平台
             if self._platform_config.default_platform:
