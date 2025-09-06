@@ -215,15 +215,22 @@ class NavigationController(NSObject):
         return self.current_page in ("homepage", "chat")
     
     def get_page_title(self) -> str:
-        """获取当前页面标题"""
-        base_title = self.page_states.get(self.current_page, {}).get("title", "Bubble")
-        
-        if self.current_page == "chat" and self.current_platform:
-            # 如果在聊天页面，显示当前AI平台
-            platform_name = self._get_platform_display_name(self.current_platform)
-            return f"{base_title} - {platform_name}"
-        
-        return base_title
+        """获取当前页面标题（本地化）"""
+        try:
+            from ..i18n import t as _t
+        except Exception:
+            def _t(k, **kwargs):
+                return "Bubble" if k == 'app.name' else ("Chat" if k == 'nav.chat' else k)
+        if self.current_page == "homepage":
+            return _t('app.name')
+        if self.current_page == "chat":
+            base = _t('app.name')
+            chat_label = _t('nav.chat')
+            if self.current_platform:
+                platform_name = self._get_platform_display_name(self.current_platform)
+                return f"{base} - {chat_label}: {platform_name}"
+            return f"{base} - {chat_label}"
+        return _t('app.name')
     
     def _get_platform_display_name(self, platform_id: str) -> str:
         """获取平台显示名称"""

@@ -3,7 +3,7 @@
   - 不改动 Python 包名与命令（bubblebot）以降低风险；如需后续再议。
   - Purpose: 统一品牌展示。
 
-- [ ] 0.2 配置路径迁移（BubbleBot → Bubble）
+- [x] 0.2 配置路径迁移（BubbleBot → Bubble）
   - File: src/bubblebot/components/config_manager.py
   - 迁移并兼容读取：`~/Library/Application Support/BubbleBot/` → `~/Library/Application Support/Bubble/`，`~/.bubblebot/` → `~/.bubble/`；时间戳备份≤5；一次性提示。
   - Purpose: 命名一致且保护用户数据。
@@ -23,12 +23,12 @@
   - 语言变更后通知各视图/菜单刷新；WebView 重新渲染或注入更新。
   - Purpose: 切换后即时生效。
 
-- [ ] 1.4 本地化现有 UI 文案
+- [x] 1.4 本地化现有 UI 文案
   - Files: src/bubblebot/app.py, src/bubblebot/components/homepage_manager.py, src/bubblebot/components/navigation_controller.py, src/bubblebot/listener.py
   - 将可见字符串替换为 `t()`；补全多语言 JSON。
   - Purpose: 覆盖核心界面与菜单。
 
-- [ ] 1.5 窗口驻留与内存提示气泡
+- [x] 1.5 窗口驻留与内存提示气泡
   - Files: src/bubblebot/components/multiwindow_manager.py, src/bubblebot/app.py
   - 新建页面默认常驻，保证多窗口可同时对话；当窗口数>5 时，在右上角显示小气泡提示“窗口过多可能占用内存”，支持关闭/不再提示；≤5 正常。
   - Purpose: 多窗口并行与友好提示。

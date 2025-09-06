@@ -18,7 +18,7 @@ try:
 except ImportError:
     AXIsProcessTrustedWithOptions = None
     kAXTrustedCheckOptionPrompt = None
-from Foundation import NSObject, NSURL, NSURLRequest, NSDate, NSTimer, NSBundle, NSNumber
+from Foundation import NSObject, NSURL, NSURLRequest, NSDate, NSTimer, NSBundle, NSNumber, NSData
 from CoreFoundation import kCFRunLoopCommonModes
 
 # Quiet verbose logs unless BB_DEBUG=1 (keep only essentials)
@@ -360,6 +360,8 @@ class AppDelegate(NSObject):
         self.last_loaded_is_homepage = False
         self.root_view = None
         self.skeleton_view = None
+        self.memory_bubble_view = None
+        self._memory_bubble_dismissed = False
         self.window_initialized = False
         self._suppress_ai_action = False
         return self
@@ -416,6 +418,172 @@ class AppDelegate(NSObject):
             return text
         except Exception:
             return default_text
+
+    # -------- Memory bubble (window count > 5) --------
+    def _ensure_memory_bubble(self):
+        if getattr(self, 'memory_bubble_view', None) is not None:
+            return
+        try:
+            # Container
+            self.memory_bubble_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 250, 24))
+            self.memory_bubble_view.setWantsLayer_(True)
+            self.memory_bubble_view.layer().setCornerRadius_(12)
+            self.memory_bubble_view.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.92).CGColor())
+            self.memory_bubble_view.layer().setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0).CGColor())
+            self.memory_bubble_view.layer().setBorderWidth_(1.0)
+            # Label
+            label = NSTextField.alloc().initWithFrame_(NSMakeRect(10, 3, 170, 18))
+            label.setBezeled_(False)
+            label.setDrawsBackground_(False)
+            label.setEditable_(False)
+            label.setSelectable_(False)
+            label.setFont_(NSFont.systemFontOfSize_(11))
+            label.setStringValue_(self._i18n_or_default('bubble.tooManyWindows', 'Too many windows may use memory'))
+            self.memory_bubble_view.addSubview_(label)
+            # Dismiss button (×)
+            dismiss = NSButton.alloc().initWithFrame_(NSMakeRect(185, 2, 20, 20))
+            dismiss.setBordered_(False)
+            dismiss.setTitle_("×")
+            dismiss.setTarget_(self)
+            dismiss.setAction_("callWithSender:")
+            self.memory_bubble_view.addSubview_(dismiss)
+            # Never show again button
+            never = NSButton.alloc().initWithFrame_(NSMakeRect(205, 2, 40, 20))
+            never.setBordered_(False)
+            never.setTitle_(self._i18n_or_default('bubble.neverShow', 'Never'))
+            never.setTarget_(self)
+            never.setAction_("callWithSenderNever:")
+            self.memory_bubble_view.addSubview_(never)
+            # Position at top-right inside top_bar
+            tb = self.top_bar
+            bx = tb.frame().size.width - 260
+            by = (self.top_bar_height - 24) / 2
+            self.memory_bubble_view.setFrameOrigin_(NSMakePoint(bx, by))
+            tb.addSubview_(self.memory_bubble_view)
+            self.memory_bubble_view.setHidden_(True)
+        except Exception:
+            self.memory_bubble_view = None
+
+    def _update_memory_bubble_visibility(self):
+        try:
+            if not getattr(self, 'memory_bubble_view', None):
+                return
+            if self._memory_bubble_dismissed:
+                self.memory_bubble_view.setHidden_(True)
+                return
+            hide_pref = False
+            try:
+                if self.homepage_manager:
+                    hide_pref = bool(self.homepage_manager.user_config.get('ui_preferences', {}).get('hide_memory_bubble', False))
+            except Exception:
+                hide_pref = False
+            count = 0
+            try:
+                if self.homepage_manager:
+                    count = int(self.homepage_manager.get_total_window_count())
+            except Exception:
+                count = 0
+            show = (count > 5) and (not hide_pref)
+            self.memory_bubble_view.setHidden_(not show)
+            if show:
+                # Ensure rightmost placement in case of resize
+                tb = self.top_bar
+                bx = tb.frame().size.width - 260
+                by = (self.top_bar_height - 24) / 2
+                self.memory_bubble_view.setFrameOrigin_(NSMakePoint(bx, by))
+        except Exception:
+            pass
+
+    # ObjC-style action handlers for bubble
+    def callWithSender_(self, sender):
+        try:
+            self._memory_bubble_dismissed = True
+            if getattr(self, 'memory_bubble_view', None):
+                self.memory_bubble_view.setHidden_(True)
+        except Exception:
+            pass
+
+    def callWithSenderNever_(self, sender):
+        try:
+            if self.homepage_manager and getattr(self.homepage_manager, 'user_config', None) is not None:
+                prefs = self.homepage_manager.user_config.setdefault('ui_preferences', {})
+                prefs['hide_memory_bubble'] = True
+                if hasattr(self.homepage_manager, '_save_user_config'):
+                    self.homepage_manager._save_user_config()
+        except Exception:
+            pass
+        self.callWithSender_(sender)
+
+    # -------- One-time notice bubble (e.g., config migration) --------
+    def _ensure_notice_bubble(self):
+        if getattr(self, 'notice_bubble_view', None) is not None:
+            return
+        try:
+            self.notice_bubble_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 360, 24))
+            self.notice_bubble_view.setWantsLayer_(True)
+            self.notice_bubble_view.layer().setCornerRadius_(12)
+            self.notice_bubble_view.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.92).CGColor())
+            self.notice_bubble_view.layer().setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0).CGColor())
+            self.notice_bubble_view.layer().setBorderWidth_(1.0)
+            # Label (store reference)
+            self.notice_label = NSTextField.alloc().initWithFrame_(NSMakeRect(10, 3, 300, 18))
+            self.notice_label.setBezeled_(False)
+            self.notice_label.setDrawsBackground_(False)
+            self.notice_label.setEditable_(False)
+            self.notice_label.setSelectable_(False)
+            self.notice_label.setFont_(NSFont.systemFontOfSize_(11))
+            self.notice_label.setStringValue_("")
+            self.notice_bubble_view.addSubview_(self.notice_label)
+            # Dismiss button (×)
+            ndismiss = NSButton.alloc().initWithFrame_(NSMakeRect(320, 2, 20, 20))
+            ndismiss.setBordered_(False)
+            ndismiss.setTitle_("×")
+            ndismiss.setTarget_(self)
+            ndismiss.setAction_("dismissNotice:")
+            self.notice_bubble_view.addSubview_(ndismiss)
+            # position top-right
+            tb = self.top_bar
+            bx = tb.frame().size.width - 370
+            by = (self.top_bar_height - 24) / 2
+            self.notice_bubble_view.setFrameOrigin_(NSMakePoint(bx, by))
+            tb.addSubview_(self.notice_bubble_view)
+            self.notice_bubble_view.setHidden_(True)
+        except Exception:
+            self.notice_bubble_view = None
+
+    def _show_migration_notice_if_pending(self):
+        try:
+            from .components.config_manager import ConfigManager as _CM
+        except Exception:
+            return
+        try:
+            if not _CM.needs_migration_notice():
+                return
+            self._ensure_notice_bubble()
+            if getattr(self, 'notice_bubble_view', None) is None:
+                return
+            msg = self._i18n_or_default('notice.configMigrated', 'Settings moved to new Bubble folder. Backup kept.')
+            try:
+                if getattr(self, 'notice_label', None) is not None:
+                    self.notice_label.setStringValue_(msg)
+            except Exception:
+                pass
+            # show
+            self.notice_bubble_view.setHidden_(False)
+        except Exception:
+            pass
+
+    def dismissNotice_(self, sender):
+        try:
+            if getattr(self, 'notice_bubble_view', None):
+                self.notice_bubble_view.setHidden_(True)
+            from .components.config_manager import ConfigManager as _CM
+            try:
+                _CM.mark_migration_notice_shown()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def setHomepageManager_(self, manager):
         """设置主页管理器"""
@@ -536,6 +704,11 @@ class AppDelegate(NSObject):
     # The main application setup.
     def applicationDidFinishLaunching_(self, notification):
         print("AppDelegate.applicationDidFinishLaunching_ 被调用")
+        # Migrate config path from BubbleBot -> Bubble (Task 0.2)
+        try:
+            ConfigManager.migrate_config_if_needed()
+        except Exception as _e:
+            pass
         # Apply language as early as possible so UI strings use the right locale
         self._apply_initial_language()
         # 省略环境日志
@@ -932,7 +1105,7 @@ class AppDelegate(NSObject):
         except Exception:
             pass
         try:
-            self.back_button.setToolTip_("返回")
+            self.back_button.setToolTip_(self._i18n_or_default('tooltip.back', 'Back'))
         except Exception:
             pass
         self.back_button.setTarget_(self)
@@ -989,6 +1162,17 @@ class AppDelegate(NSObject):
             pass
         self.top_bar.addSubview_(self.ai_selector)
         
+        # 内存提示气泡（当窗口数量>5时显示，支持关闭/不再提示）
+        try:
+            self._ensure_memory_bubble()
+        except Exception:
+            pass
+        # 显示一次性迁移提示（如需要）
+        try:
+            self._show_migration_notice_if_pending()
+        except Exception:
+            pass
+        
         # 不再添加覆盖下拉的“主页标签”
         # 美化下拉菜单项居中（避免安装菜单委托造成不稳定）
         try:
@@ -1038,6 +1222,10 @@ class AppDelegate(NSObject):
                 load_home = True
         # 填充平台项（主页时首项为“主页”）
         self._populate_ai_selector(include_home_first=load_home)
+        try:
+            self._update_memory_bubble_visibility()
+        except Exception:
+            pass
 
         # WebView 全高（顶栏悬浮覆盖，不挤压内容）
         webview_frame = NSMakeRect(
@@ -1103,6 +1291,11 @@ class AppDelegate(NSObject):
                 self._select_ai_item(startup_platform)
             except Exception as _e:
                 print(f"DEBUG: 启动平台加载异常: {_e}")
+        # 初始刷新内存提示
+        try:
+            self._update_memory_bubble_visibility()
+        except Exception:
+            pass
         # Inject JavaScript to monitor background color changes
         script = """
             function sendBackgroundColor() {
@@ -1117,24 +1310,40 @@ class AppDelegate(NSObject):
         # Create status bar item with logo
         # Use variable length to let the system size appropriately
         self.status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_white_path = os.path.join(script_dir, LOGO_WHITE_PATH)
-        self.logo_white = NSImage.alloc().initWithContentsOfFile_(logo_white_path)
-        if self.logo_white:
+
+        # Robust icon loader that works for both source tree and py2app zip
+        def _load_nsimage_from_package(rel_path):
+            """Load NSImage from package data (zip-safe), falling back to file path."""
+            img = None
             try:
-                # Use original colors in status bar (no template tint)
-                self.logo_white.setTemplate_(False)
+                import pkgutil
+                data = pkgutil.get_data('bubblebot', rel_path)
+                if data:
+                    nsdata = NSData.dataWithBytes_length_(data, len(data))
+                    img = NSImage.alloc().initWithData_(nsdata)
             except Exception:
-                pass
-        self.logo_white.setSize_(NSSize(18, 18))
-        logo_black_path = os.path.join(script_dir, LOGO_BLACK_PATH)
-        self.logo_black = NSImage.alloc().initWithContentsOfFile_(logo_black_path)
-        if self.logo_black:
-            try:
-                self.logo_black.setTemplate_(False)
-            except Exception:
-                pass
-        self.logo_black.setSize_(NSSize(18, 18))
+                img = None
+            if img is None:
+                try:
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    p = os.path.join(script_dir, rel_path)
+                    if os.path.exists(p):
+                        img = NSImage.alloc().initWithContentsOfFile_(p)
+                except Exception:
+                    img = None
+            if img is not None:
+                try:
+                    img.setTemplate_(False)
+                except Exception:
+                    pass
+                try:
+                    img.setSize_(NSSize(18, 18))
+                except Exception:
+                    pass
+            return img
+
+        self.logo_white = _load_nsimage_from_package(LOGO_WHITE_PATH)
+        self.logo_black = _load_nsimage_from_package(LOGO_BLACK_PATH)
         # 生成圆角版本图标用于状态栏（更精致）
         # Keep originals as template images; we will round at runtime to enforce silhouette
         self.logo_white_rounded = None
@@ -1209,6 +1418,12 @@ class AppDelegate(NSObject):
         quit_item.setTarget_(NSApp)
         quit_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("power", None))
         menu.addItem_(quit_item)
+        
+        # Localize menu titles initially
+        try:
+            self._refresh_status_menu_titles()
+        except Exception:
+            pass
 
         # Set the menu for the status item
         self.status_item.setMenu_(menu)
@@ -1219,13 +1434,26 @@ class AppDelegate(NSObject):
             pass
 
     def _refresh_status_menu_titles(self):
-        # This updates menu text to match current language; items exist after status menu is built
+        # Update menu text to current language
         try:
-            if hasattr(self, 'menu_quit_item') and self.menu_quit_item is not None:
+            if getattr(self, 'menu_show_item', None) is not None:
+                self.menu_show_item.setTitle_(f"{self._i18n_or_default('menu.show', 'Show')} {APP_TITLE}")
+            if getattr(self, 'menu_hide_item', None) is not None:
+                self.menu_hide_item.setTitle_(f"{self._i18n_or_default('menu.hide', 'Hide')} {APP_TITLE}")
+            if getattr(self, 'menu_home_item', None) is not None:
+                self.menu_home_item.setTitle_(self._i18n_or_default('menu.home', 'Home'))
+            if getattr(self, 'menu_clear_cache_item', None) is not None:
+                self.menu_clear_cache_item.setTitle_(self._i18n_or_default('menu.clearCache', 'Clear Web Cache'))
+            if getattr(self, 'menu_set_trigger_item', None) is not None:
+                self.menu_set_trigger_item.setTitle_(self._i18n_or_default('menu.setNewTrigger', 'Set New Trigger'))
+            if getattr(self, 'menu_install_autolaunch_item', None) is not None:
+                self.menu_install_autolaunch_item.setTitle_(self._i18n_or_default('menu.installAutolauncher', 'Install Autolauncher'))
+            if getattr(self, 'menu_uninstall_autolaunch_item', None) is not None:
+                self.menu_uninstall_autolaunch_item.setTitle_(self._i18n_or_default('menu.uninstallAutolauncher', 'Uninstall Autolauncher'))
+            if getattr(self, 'menu_quit_item', None) is not None:
                 self.menu_quit_item.setTitle_(self._i18n_or_default('menu.quit', 'Quit'))
         except Exception:
             pass
-        # Other items will be localized in Task 1.4 when visible strings are replaced with t()
         # Add resize observer（用于自适应顶部栏与选择器位置）
         NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
             self, 'windowDidResize:', NSWindowDidResizeNotification, self.window
@@ -1550,6 +1778,10 @@ class AppDelegate(NSObject):
                             if self.homepage_manager.can_add_window():
                                 new_id = str(uuid4())
                                 self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
+                                try:
+                                    self._update_memory_bubble_visibility()
+                                except Exception:
+                                    pass
                                 target_window_id = new_id
                     except Exception:
                         pass
@@ -1587,18 +1819,21 @@ class AppDelegate(NSObject):
                     self._populate_ai_selector()
                     return
                 if action == "addWindow" and self.homepage_manager:
-                    # 为平台新增页面实例（总数上限 5）
+                    # 为平台新增页面实例（默认常驻；超过5个将提示内存警告气泡）
                     from uuid import uuid4
-                    if self.homepage_manager.can_add_window():
-                        new_id = str(uuid4())
-                        ok = self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
-                        if ok:
-                            # 刷新主页并保持下拉为“主页”，不导航
-                            try:
-                                self._refresh_homepage()
-                                self._set_ai_selector_to_home()
-                            except Exception:
-                                pass
+                    new_id = str(uuid4())
+                    ok = self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
+                    if ok:
+                        # 刷新主页并保持下拉为“主页”，不导航
+                        try:
+                            self._refresh_homepage()
+                            self._set_ai_selector_to_home()
+                        except Exception:
+                            pass
+                        try:
+                            self._update_memory_bubble_visibility()
+                        except Exception:
+                            pass
                     return
                 if action == "removeWindow" and self.homepage_manager:
                     wid = data.get('windowId') if isinstance(data, dict) else None
@@ -1607,6 +1842,10 @@ class AppDelegate(NSObject):
                         if ok:
                             self._refresh_homepage()
                             self._populate_ai_selector()
+                            try:
+                                self._update_memory_bubble_visibility()
+                            except Exception:
+                                pass
                     return
 
             if name == "navigationAction":
@@ -1743,7 +1982,7 @@ class AppDelegate(NSObject):
 
         # 首页优先项（仅当在主页时调用时使用）
         if include_home_first:
-            self.ai_selector.addItemWithTitle_("主页")
+            self.ai_selector.addItemWithTitle_(_t('nav.home'))
             try:
                 # 给“主页”项加屋子图标
                 it = self.ai_selector.itemAtIndex_(0)

@@ -19,10 +19,25 @@ except Exception:  # pragma: no cover
 
 
 class ConfigManager:
+    _FILENAME = "config.json"
+
+    @classmethod
+    def _new_app_support_dir(cls) -> str:
+        return os.path.expanduser("~/Library/Application Support/Bubble")
+
+    @classmethod
+    def _old_app_support_dir(cls) -> str:
+        return os.path.expanduser("~/Library/Application Support/BubbleBot")
+
     @classmethod
     def config_path(cls) -> str:
-        # Will be migrated in Task 0.2
-        return os.path.expanduser("~/Library/Application Support/BubbleBot/config.json")
+        # New location after Task 0.2 migration
+        return os.path.join(cls._new_app_support_dir(), cls._FILENAME)
+
+    @classmethod
+    def legacy_config_path(cls) -> str:
+        # Legacy (pre-rename) location
+        return os.path.join(cls._old_app_support_dir(), cls._FILENAME)
 
     @classmethod
     def _ensure_dir(cls) -> None:
@@ -35,6 +50,11 @@ class ConfigManager:
         try:
             if os.path.exists(p):
                 with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            # Fallback read from legacy path (no writeback here; migration handles that)
+            lp = cls.legacy_config_path()
+            if os.path.exists(lp):
+                with open(lp, "r", encoding="utf-8") as f:
                     return json.load(f)
         except Exception:
             pass
@@ -64,6 +84,76 @@ class ConfigManager:
         cls.save(cfg)
 
     @classmethod
+    def migrate_config_if_needed(cls) -> bool:
+        """Migrate config from BubbleBot -> Bubble, keeping a backup and flagging a one-time notice.
+
+        Returns True if a migration was performed.
+        """
+        try:
+            new_p = cls.config_path()
+            old_p = cls.legacy_config_path()
+            # Ensure new dir exists
+            os.makedirs(os.path.dirname(new_p), exist_ok=True)
+            if os.path.exists(new_p):
+                return False  # already migrated/created
+            if not os.path.exists(old_p):
+                return False  # nothing to migrate
+
+            # Copy old -> new
+            try:
+                with open(old_p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+
+            # Stamp migration meta and set notice flag
+            meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+            meta.update({
+                "migrated_from": "BubbleBot",
+                "migration_notice_pending": True,
+                "legacy_path": old_p,
+            })
+            data["meta"] = meta
+
+            # Save to new path
+            with open(new_p, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+
+            # Also create a backup alongside the new file (optional redundancy)
+            try:
+                backup_p = os.path.join(os.path.dirname(new_p), "config.backup.json")
+                if not os.path.exists(backup_p):
+                    with open(backup_p, "w", encoding="utf-8") as bf:
+                        json.dump(data, bf, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            print(f"WARNING[config]: migration failed: {e}")
+            return False
+
+    @classmethod
+    def needs_migration_notice(cls) -> bool:
+        try:
+            cfg = cls.load()
+            meta = cfg.get("meta") if isinstance(cfg.get("meta"), dict) else {}
+            return bool(meta.get("migration_notice_pending", False))
+        except Exception:
+            return False
+
+    @classmethod
+    def mark_migration_notice_shown(cls) -> None:
+        try:
+            cfg = cls.load()
+            meta = cfg.get("meta") if isinstance(cfg.get("meta"), dict) else {}
+            meta["migration_notice_pending"] = False
+            meta["migration_notice_shown"] = True
+            cfg["meta"] = meta
+            cls.save(cfg)
+        except Exception:
+            pass
+
+    @classmethod
     def detect_system_language(cls) -> str:
         # Preferred: macOS NSLocale preferredLanguages (e.g. zh-Hans-CN)
         code: Optional[str] = None
@@ -88,4 +178,3 @@ class ConfigManager:
         if code.startswith("fr"):
             return "fr"
         return "en"
-

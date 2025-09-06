@@ -133,7 +133,8 @@ def set_custom_launcher_trigger(app):
         cancel_button = PointerButton.alloc().initWithFrame_(cancel_button_frame)
     except Exception:
         cancel_button = NSButton.alloc().initWithFrame_(cancel_button_frame)
-    cancel_button.setTitle_("Cancel")
+    from .i18n import t as _t
+    cancel_button.setTitle_(_t("button.cancel"))
     try:
         cancel_button.setBezelStyle_(NSRoundedBezelStyle)
     except Exception:
