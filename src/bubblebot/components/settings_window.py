@@ -42,6 +42,8 @@ from AppKit import (
     NSTrackingMouseEnteredAndExited,
     NSTrackingActiveAlways,
     NSTrackingInVisibleRect,
+    NSBezierPath,
+    NSRectFill,
 )
 
 from Foundation import NSObject
@@ -51,19 +53,31 @@ from .config_manager import ConfigManager
 from ..listener import set_custom_launcher_trigger
 
 
-class HoverButton(NSButton):
+class VercelButton(NSButton):
     def initWithFrame_(self, frame):
-        self = objc.super(HoverButton, self).initWithFrame_(frame)
+        self = objc.super(VercelButton, self).initWithFrame_(frame)
         if self is None:
             return None
         try:
             self.setWantsLayer_(True)
             self.layer().setCornerRadius_(8.0)
             self.layer().setMasksToBounds_(True)
-            self.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08).CGColor())
+            # Base ghost style (subtle surface)
+            self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.06)
+            self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10)
+            self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.16)
+            self.layer().setBackgroundColor_(self._base_bg.CGColor())
+            # Subtle border
+            self.layer().setBorderWidth_(1.0)
+            try:
+                border = NSColor.separatorColor().colorWithAlphaComponent_(0.25)
+            except Exception:
+                border = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.15)
+            self.layer().setBorderColor_(border.CGColor())
         except Exception:
             pass
         self._tracking_area = None
+        self._is_primary = False
         return self
 
     def updateTrackingAreas(self):
@@ -77,33 +91,83 @@ class HoverButton(NSButton):
             self.addTrackingArea_(self._tracking_area)
         except Exception:
             pass
-        objc.super(HoverButton, self).updateTrackingAreas()
+        objc.super(VercelButton, self).updateTrackingAreas()
 
     def mouseEntered_(self, event):
         try:
-            self.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.12).CGColor())
+            self.layer().setBackgroundColor_(self._hover_bg.CGColor())
         except Exception:
             pass
 
     def mouseExited_(self, event):
         try:
-            self.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08).CGColor())
+            self.layer().setBackgroundColor_(self._base_bg.CGColor())
         except Exception:
             pass
 
     def mouseDown_(self, event):
         try:
-            self.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.16).CGColor())
+            self.layer().setBackgroundColor_(self._press_bg.CGColor())
         except Exception:
             pass
-        objc.super(HoverButton, self).mouseDown_(event)
+        objc.super(VercelButton, self).mouseDown_(event)
 
     def mouseUp_(self, event):
         try:
-            self.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.12).CGColor())
+            self.layer().setBackgroundColor_(self._hover_bg.CGColor())
         except Exception:
             pass
-        objc.super(HoverButton, self).mouseUp_(event)
+        objc.super(VercelButton, self).mouseUp_(event)
+
+    def setPrimary_(self, primary):
+        self._is_primary = bool(primary)
+        try:
+            if primary:
+                # Use system accent with transparency
+                self._base_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.24)
+                self._hover_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.30)
+                self._press_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.38)
+                self.layer().setBorderColor_(NSColor.clearColor().CGColor())
+            else:
+                self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.06)
+                self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10)
+                self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.16)
+                try:
+                    border = NSColor.separatorColor().colorWithAlphaComponent_(0.25)
+                except Exception:
+                    border = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.15)
+                self.layer().setBorderColor_(border.CGColor())
+            self.layer().setBackgroundColor_(self._base_bg.CGColor())
+        except Exception:
+            pass
+
+class CardView(NSView):
+    def initWithFrame_(self, frame):
+        self = objc.super(CardView, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        try:
+            self.setWantsLayer_(True)
+            self.layer().setCornerRadius_(12.0)
+            self.layer().setMasksToBounds_(False)
+            # Adaptive background
+            bg = NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.75)
+            self.layer().setBackgroundColor_(bg.CGColor())
+            # Border
+            try:
+                border = NSColor.separatorColor().colorWithAlphaComponent_(0.35)
+            except Exception:
+                border = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.20)
+            self.layer().setBorderWidth_(1.0)
+            self.layer().setBorderColor_(border.CGColor())
+            # Soft shadow
+            self.layer().setShadowColor_(NSColor.blackColor().CGColor())
+            self.layer().setShadowOpacity_(0.18)
+            self.layer().setShadowRadius_(10.0)
+            self.layer().setShadowOffset_((0.0, -1.0))
+        except Exception:
+            pass
+        return self
 
 class SettingsWindow(NSObject):
     def initWithAppDelegate_(self, app_delegate):
@@ -171,6 +235,16 @@ class SettingsWindow(NSObject):
         except Exception:
             self.bg_blur = None
 
+        # Card container
+        margin = 16
+        card_frame = NSMakeRect(margin, margin, bounds.size.width - margin * 2, bounds.size.height - margin * 2)
+        self.card = CardView.alloc().initWithFrame_(card_frame)
+        try:
+            self.card.setAutoresizingMask_((1 << 1) | (1 << 4) | (1 << 3) | (1 << 0))  # width/height + minX/maxY
+        except Exception:
+            pass
+        content.addSubview_(self.card)
+
         def add_label(text, x, y, w, h, bold=False):
             lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
             lbl.setBezeled_(False)
@@ -186,7 +260,7 @@ class SettingsWindow(NSObject):
                 lbl.setTextColor_(NSColor.labelColor())
             except Exception:
                 pass
-            content.addSubview_(lbl)
+            self.card.addSubview_(lbl)
             return lbl
 
         def style_button(btn):
@@ -205,10 +279,10 @@ class SettingsWindow(NSObject):
             return btn
 
         def add_button(title, x, y, w, h):
-            btn = HoverButton.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
+            btn = VercelButton.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
             btn.setTitle_(title)
             style_button(btn)
-            content.addSubview_(btn)
+            self.card.addSubview_(btn)
             return btn
 
         def add_image_view(img, x, y, w, h):
@@ -218,26 +292,19 @@ class SettingsWindow(NSObject):
             except Exception:
                 pass
             iv.setImage_(img)
-            content.addSubview_(iv)
+            self.card.addSubview_(iv)
             return iv
 
         # Header with logo + title
         logo_img = self._load_logo_for_appearance()
         if logo_img is not None:
-            self.header_logo_view = add_image_view(logo_img, 20, bounds.size.height - 46, 20, 20)
-        self.header_title_label = add_label(_t('settings.title'), 46, bounds.size.height - 44, 260, 22, bold=True)
-        # Hairline separator
-        try:
-            sep = NSView.alloc().initWithFrame_(NSMakeRect(20, bounds.size.height - 52, bounds.size.width - 40, 1))
-            sep.setWantsLayer_(True)
-            sep.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-            content.addSubview_(sep)
-        except Exception:
-            pass
+        card_bounds = self.card.bounds()
+        self.header_logo_view = add_image_view(logo_img, 16, card_bounds.size.height - 40, 20, 20)
+        self.header_title_label = add_label(_t('settings.title'), 44, card_bounds.size.height - 38, 260, 22, bold=True)
 
         # Language selector
-        self.lang_label = add_label(_t('settings.language'), 20, bounds.size.height - 92, 120, 20)
-        self.lang_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(150, bounds.size.height - 96, 200, 28), False)
+        self.lang_label = add_label(_t('settings.language'), 16, card_bounds.size.height - 80, 120, 20)
+        self.lang_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(150, card_bounds.size.height - 84, 220, 28), False)
         self.lang_popup.addItemWithTitle_("English")
         self.lang_popup.addItemWithTitle_("中文")
         self.lang_popup.addItemWithTitle_("日本語")
@@ -247,40 +314,54 @@ class SettingsWindow(NSObject):
             self.lang_popup.setWantsLayer_(True)
             self.lang_popup.layer().setCornerRadius_(8.0)
             self.lang_popup.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.06).CGColor())
+            self.lang_popup.layer().setBorderWidth_(1.0)
+            self.lang_popup.layer().setBorderColor_(NSColor.separatorColor().colorWithAlphaComponent_(0.25).CGColor())
         except Exception:
             pass
-        content.addSubview_(self.lang_popup)
+        self.card.addSubview_(self.lang_popup)
 
         # Launch at login
-        self.launch_checkbox = NSButton.alloc().initWithFrame_(NSMakeRect(20, bounds.size.height - 132, 260, 20))
+        self.launch_checkbox = NSButton.alloc().initWithFrame_(NSMakeRect(16, card_bounds.size.height - 120, 260, 20))
         self.launch_checkbox.setButtonType_(NSSwitchButton)
         self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
-        content.addSubview_(self.launch_checkbox)
+        self.card.addSubview_(self.launch_checkbox)
 
         # Hotkey
-        self.hotkey_label = add_label(_t('settings.hotkey'), 20, bounds.size.height - 172, 80, 20)
-        self.hotkey_value = add_label("", 110, bounds.size.height - 172, 180, 20)
-        self.hotkey_button = add_button(_t('button.change'), 300, bounds.size.height - 176, 120, 30)
+        self.hotkey_label = add_label(_t('settings.hotkey'), 16, card_bounds.size.height - 160, 80, 20)
+        self.hotkey_value = add_label("", 110, card_bounds.size.height - 160, 180, 20)
+        self.hotkey_button = add_button(_t('button.change'), card_bounds.size.width - 136, card_bounds.size.height - 164, 120, 30)
         self.hotkey_button.setTarget_(self)
         self.hotkey_button.setAction_("changeHotkey:")
+        try:
+            self.hotkey_button.setAutoresizingMask_((1 << 1) | (1 << 3))  # width + maxY
+        except Exception:
+            pass
 
         # Clear cache
-        self.clear_cache_button = add_button(_t('settings.clearCache'), 20, bounds.size.height - 212, 200, 30)
+        self.clear_cache_button = add_button(_t('settings.clearCache'), 16, card_bounds.size.height - 208, 200, 30)
         self.clear_cache_button.setTarget_(self)
         self.clear_cache_button.setAction_("clearCache:")
 
         # Save / Cancel
-        self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", bounds.size.width - 200, 20, 90, 32)
+        # Action bar (bottom right)
+        self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", card_bounds.size.width - 196, 16, 96, 32)
         self.save_button.setTarget_(self)
         self.save_button.setAction_("saveSettings:")
         try:
-            # Accent background for primary
-            self.save_button.layer().setBackgroundColor_(NSColor.controlAccentColor().colorWithAlphaComponent_(0.22).CGColor())
+            self.save_button.setAutoresizingMask_((1 << 1) | (1 << 0))  # width + minX
         except Exception:
             pass
-        self.cancel_button = add_button(_t('button.cancel'), bounds.size.width - 100, 20, 80, 32)
+        try:
+            self.save_button.setPrimary_(True)
+        except Exception:
+            pass
+        self.cancel_button = add_button(_t('button.cancel'), card_bounds.size.width - 96, 16, 80, 32)
         self.cancel_button.setTarget_(self)
         self.cancel_button.setAction_("cancelSettings:")
+        try:
+            self.cancel_button.setAutoresizingMask_((1 << 1) | (1 << 0))
+        except Exception:
+            pass
 
         self._load_values_into_ui()
 
@@ -346,11 +427,27 @@ class SettingsWindow(NSObject):
             if os.environ.get('BB_NO_EFFECTS') == '1':
                 raise Exception('effects disabled by env')
             self.window.setAlphaValue_(0.0)
+            try:
+                # Prepare card for slight rise + fade
+                if hasattr(self, 'card') and self.card:
+                    cf = self.card.frame()
+                    self.card.setAlphaValue_(0.0)
+                    self.card.setFrameOrigin_((cf.origin.x, cf.origin.y - 6))
+            except Exception:
+                pass
             self.window.makeKeyAndOrderFront_(None)
             NSApp.activateIgnoringOtherApps_(True)
             NSAnimationContext.beginGrouping()
             NSAnimationContext.currentContext().setDuration_(0.18)
             self.window.animator().setAlphaValue_(1.0)
+            try:
+                # Animate card in
+                if hasattr(self, 'card') and self.card:
+                    cf = self.card.frame()
+                    self.card.animator().setAlphaValue_(1.0)
+                    self.card.animator().setFrameOrigin_((cf.origin.x, cf.origin.y + 6))
+            except Exception:
+                pass
             NSAnimationContext.endGrouping()
         except Exception:
             self.window.makeKeyAndOrderFront_(None)

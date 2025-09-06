@@ -55,10 +55,6 @@ from .constants import (
     STATUS_ITEM_CONTEXT,
     WEBSITE,
 )
-from .launcher import (
-    install_startup,
-    uninstall_startup,
-)
 from .listener import (
     global_show_hide_listener,
     load_custom_launcher_trigger,
@@ -1678,14 +1674,7 @@ class AppDelegate(NSObject):
             lambda: print("Data cleared")
         )
 
-    # Go to the default landing website for the overlay (in case accidentally navigated away).
-    def install_(self, sender):
-        if install_startup():
-            # Exit the current process since a new one will launch.
-            print("Installation successful, exiting.", flush=True)
-            NSApp.terminate_(None)
-        else:
-            print("Installation unsuccessful.", flush=True)
+    # Legacy Autolauncher actions removed (3.1): install_/uninstall_ no longer present
 
     # 创建圆角图像（用于 Dock PNG 兜底和状态栏图标美化）
     def _rounded_nsimage(self, image, radius):
@@ -1711,10 +1700,7 @@ class AppDelegate(NSObject):
         except Exception:
             return image
 
-    # Go to the default landing website for the overlay (in case accidentally navigated away).
-    def uninstall_(self, sender):
-        if uninstall_startup():
-            NSApp.hide_(None)
+    
 
     # Handle the 'Set Trigger' menu item click.
     def setTrigger_(self, sender):
