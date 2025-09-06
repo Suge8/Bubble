@@ -1,0 +1,25 @@
+{
+  "app.name": "Bubble",
+  "menu.settings": "設定…",
+  "menu.quit": "終了",
+  "menu.showHideHint": "{hotkey} を押して表示/非表示",
+  "home.title": "Bubble",
+  "home.welcome": "ようこそ Bubble へ",
+  "button.open": "開く",
+  "button.add": "追加",
+  "button.remove": "削除",
+  "button.setDefault": "デフォルトに設定",
+  "button.newWindow": "新しいウィンドウ",
+  "label.default": "デフォルト",
+  "status.loading": "読み込み中…",
+  "tooltip.back": "戻る",
+  "ai.manage.title": "AI プラットフォーム管理",
+  "ai.windows.activeCount": "アクティブなウィンドウ {count} 件",
+  "settings.title": "設定",
+  "settings.language": "言語",
+  "settings.launchAtLogin": "ログイン時に起動",
+  "settings.hotkey": "ホットキー",
+  "settings.clearCache": "Web キャッシュを消去",
+  "errors.unsupportedPlatform": "未対応のプラットフォーム"
+}
+

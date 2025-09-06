@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bubblebot"
+version = "0.0.1"
+description = "macOS智能AI助手应用，支持多窗口AI并行使用"
+authors = [
+    {name = "Sai Praveen"}
+]
+dependencies = [
+    "pyobjc",
+    "pyobjc-framework-Quartz",
+    "pyobjc-framework-WebKit",
+    "setuptools",
+]
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "flake8",
+    "black",
+    "pylint",
+]
+packaging = [
+    "py2app ; platform_system == 'Darwin'",
+]
+
+[project.scripts]
+bubblebot = "bubblebot.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

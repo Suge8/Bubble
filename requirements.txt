@@ -1,0 +1,4 @@
+pyobjc
+pyobjc-framework-WebKit
+setuptools
+py2app ; platform_system == "Darwin"

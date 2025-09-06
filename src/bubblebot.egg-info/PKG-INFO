@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: bubblebot
+Version: 0.0.1
+Summary: macOS智能AI助手应用，支持多窗口AI并行使用
+Author: Sai Praveen
+Requires-Python: >=3.10
+Requires-Dist: pyobjc
+Requires-Dist: pyobjc-framework-Quartz
+Requires-Dist: pyobjc-framework-WebKit
+Requires-Dist: setuptools
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: pylint; extra == "dev"
+Provides-Extra: packaging
+Requires-Dist: py2app; platform_system == "Darwin" and extra == "packaging"

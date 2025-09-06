@@ -1,0 +1,25 @@
+{
+  "app.name": "Bubble",
+  "menu.settings": "설정…",
+  "menu.quit": "종료",
+  "menu.showHideHint": "{hotkey} 를 눌러 표시/숨기기",
+  "home.title": "Bubble",
+  "home.welcome": "Bubble 에 오신 것을 환영합니다",
+  "button.open": "열기",
+  "button.add": "추가",
+  "button.remove": "제거",
+  "button.setDefault": "기본값으로 설정",
+  "button.newWindow": "새 창",
+  "label.default": "기본",
+  "status.loading": "불러오는 중…",
+  "tooltip.back": "뒤로",
+  "ai.manage.title": "AI 플랫폼 관리",
+  "ai.windows.activeCount": "활성 창 {count}개",
+  "settings.title": "설정",
+  "settings.language": "언어",
+  "settings.launchAtLogin": "로그인 시 실행",
+  "settings.hotkey": "단축키",
+  "settings.clearCache": "웹 캐시 지우기",
+  "errors.unsupportedPlatform": "지원되지 않는 플랫폼"
+}
+

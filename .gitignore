@@ -1,0 +1,24 @@
+# Virtualenv
+.venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Build artifacts
+build/
+dist/
+*.app
+*.dmg
+*.spec
+
+# macOS hidden files
+.DS_Store
+
+# Logs
+*.log
+# Temporary assets
+tmp.*
+.tmp*
+*/tmp.*
+tmp_*/

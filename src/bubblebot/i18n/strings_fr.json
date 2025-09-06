@@ -1,0 +1,25 @@
+{
+  "app.name": "Bubble",
+  "menu.settings": "Réglages…",
+  "menu.quit": "Quitter",
+  "menu.showHideHint": "Appuyez sur {hotkey} pour afficher/masquer",
+  "home.title": "Bubble",
+  "home.welcome": "Bienvenue sur Bubble",
+  "button.open": "Ouvrir",
+  "button.add": "Ajouter",
+  "button.remove": "Supprimer",
+  "button.setDefault": "Définir par défaut",
+  "button.newWindow": "Nouvelle fenêtre",
+  "label.default": "Par défaut",
+  "status.loading": "Chargement…",
+  "tooltip.back": "Retour",
+  "ai.manage.title": "Gestion des plateformes IA",
+  "ai.windows.activeCount": "{count} fenêtres actives",
+  "settings.title": "Réglages",
+  "settings.language": "Langue",
+  "settings.launchAtLogin": "Lancer à l’ouverture de session",
+  "settings.hotkey": "Raccourci",
+  "settings.clearCache": "Vider le cache Web",
+  "errors.unsupportedPlatform": "Plateforme non prise en charge"
+}
+

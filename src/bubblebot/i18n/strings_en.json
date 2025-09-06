@@ -1,0 +1,25 @@
+{
+  "app.name": "Bubble",
+  "menu.settings": "Settings…",
+  "menu.quit": "Quit",
+  "menu.showHideHint": "Press {hotkey} to Show/Hide",
+  "home.title": "Bubble",
+  "home.welcome": "Welcome to Bubble",
+  "button.open": "Open",
+  "button.add": "Add",
+  "button.remove": "Remove",
+  "button.setDefault": "Set as Default",
+  "button.newWindow": "New Window",
+  "label.default": "Default",
+  "status.loading": "Loading…",
+  "tooltip.back": "Back",
+  "ai.manage.title": "AI Platform Management",
+  "ai.windows.activeCount": "{count} active windows",
+  "settings.title": "Settings",
+  "settings.language": "Language",
+  "settings.launchAtLogin": "Launch at Login",
+  "settings.hotkey": "Hotkey",
+  "settings.clearCache": "Clear Web Cache",
+  "errors.unsupportedPlatform": "Unsupported platform"
+}
+

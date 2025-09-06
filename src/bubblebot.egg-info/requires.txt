@@ -1,0 +1,15 @@
+pyobjc
+pyobjc-framework-Quartz
+pyobjc-framework-WebKit
+setuptools
+
+[dev]
+pytest
+flake8
+black
+pylint
+
+[packaging]
+
+[packaging:platform_system == "Darwin"]
+py2app

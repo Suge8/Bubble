@@ -1,0 +1,27 @@
+{
+  "id": "approval_1756752694300_hujk74ja5",
+  "title": "修订后的项目规范化需求文档审批",
+  "filePath": ".spec-workflow/specs/project-standardization/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-09-01T18:51:34.300Z",
+  "category": "spec",
+  "categoryName": "project-standardization",
+  "response": "Feedback Summary (1 comments):\n\nSpecific Text Comments:\n1. \"1. 当用户在主页时，系统应当提供AI平台增删功能\n2. 当用户添加AI平台时，系统应当支持以下平台...\": 增添一项，添加后只要存在于顶部下拉框的平台，都会在后台留存，保证顶部下拉框存在的平台都会实现并行，且同一个平台能够添加多个窗口，不同窗口能够登录不同账号。下拉框最多同时存在五个窗口\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"增添一项，添加后只要存在于顶部下拉框的平台，都会在后台留存，保证顶部下拉框存在的平台都会实现并行，且同一个平台能够添加多个窗口，不同窗口能够登录不同账号。下拉框最多同时存在五个窗口\",\n      \"timestamp\": \"2025-09-01T18:52:52.453Z\",\n      \"selectedText\": \"1. 当用户在主页时，系统应当提供AI平台增删功能\\n2. 当用户添加AI平台时，系统应当支持以下平台：openai、gemini、grok、claude、deepseek、zai、qwen\\n3. 当用户删减AI平台时，系统应当从可用选项中移除该平台\\n4. 当用户管理完平台后，系统应当保存用户的平台配置\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1756752772453_5crpdjecv\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nSpecific Text Comments:\\n1. \\\"1. 当用户在主页时，系统应当提供AI平台增删功能\\n2. 当用户添加AI平台时，系统应当支持以下平台...\\\": 增添一项，添加后只要存在于顶部下拉框的平台，都会在后台留存，保证顶部下拉框存在的平台都会实现并行，且同一个平台能够添加多个窗口，不同窗口能够登录不同账号。下拉框最多同时存在五个窗口\\n\",\n  \"timestamp\": \"2025-09-01T18:52:54.670Z\"\n}",
+  "respondedAt": "2025-09-01T18:52:54.675Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "增添一项，添加后只要存在于顶部下拉框的平台，都会在后台留存，保证顶部下拉框存在的平台都会实现并行，且同一个平台能够添加多个窗口，不同窗口能够登录不同账号。下拉框最多同时存在五个窗口",
+      "timestamp": "2025-09-01T18:52:52.453Z",
+      "selectedText": "1. 当用户在主页时，系统应当提供AI平台增删功能\n2. 当用户添加AI平台时，系统应当支持以下平台：openai、gemini、grok、claude、deepseek、zai、qwen\n3. 当用户删减AI平台时，系统应当从可用选项中移除该平台\n4. 当用户管理完平台后，系统应当保存用户的平台配置",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1756752772453_5crpdjecv"
+    }
+  ]
+}

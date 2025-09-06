@@ -1,0 +1,27 @@
+{
+  "id": "approval_1757076318264_j9clk7uxn",
+  "title": "Approve tasks update (Settings animations + README multilingual structure)",
+  "filePath": ".spec-workflow/specs/project-standardization/tasks.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-09-05T12:45:18.264Z",
+  "category": "spec",
+  "categoryName": "project-standardization",
+  "response": "Feedback Summary (1 comments):\n\nSpecific Text Comments:\n1. \"- 顶部放置语言切换导航（锚点链接）：中文（完整版本，置顶）、English、日本語、한국어、Fra...\": 使用方法的话，推荐直接使用我们打包好的 realease app，然后给出链接，然后下面给出开发如何使用的简单讲解\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"使用方法的话，推荐直接使用我们打包好的 realease app，然后给出链接，然后下面给出开发如何使用的简单讲解\",\n      \"timestamp\": \"2025-09-05T12:48:03.017Z\",\n      \"selectedText\": \"- 顶部放置语言切换导航（锚点链接）：中文（完整版本，置顶）、English、日本語、한국어、Français；\\n    - 以“项目介绍/优势/特色/演示/快速开始（精简）/设置（简述）/参与贡献/许可证/支持链接”为主，突出易用与推广；\\n    - “使用方法”仅保留最小必要步骤，详细文档迁入 docs/（可后续补）；\\n    - 同步移除 Autolauncher 与旧菜单项说明；\\n    - 按多语言维护对应段落占位与基本内容。\\n  - Purpose: 更聚焦推广与可读性，并覆盖多语言 README。\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#ffeb3b\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1757076471088_ivg3e2nh4\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nSpecific Text Comments:\\n1. \\\"- 顶部放置语言切换导航（锚点链接）：中文（完整版本，置顶）、English、日本語、한국어、Fra...\\\": 使用方法的话，推荐直接使用我们打包好的 realease app，然后给出链接，然后下面给出开发如何使用的简单讲解\\n\",\n  \"timestamp\": \"2025-09-05T12:48:45.998Z\"\n}",
+  "respondedAt": "2025-09-05T12:48:46.002Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "使用方法的话，推荐直接使用我们打包好的 realease app，然后给出链接，然后下面给出开发如何使用的简单讲解",
+      "timestamp": "2025-09-05T12:48:03.017Z",
+      "selectedText": "- 顶部放置语言切换导航（锚点链接）：中文（完整版本，置顶）、English、日本語、한국어、Français；\n    - 以“项目介绍/优势/特色/演示/快速开始（精简）/设置（简述）/参与贡献/许可证/支持链接”为主，突出易用与推广；\n    - “使用方法”仅保留最小必要步骤，详细文档迁入 docs/（可后续补）；\n    - 同步移除 Autolauncher 与旧菜单项说明；\n    - 按多语言维护对应段落占位与基本内容。\n  - Purpose: 更聚焦推广与可读性，并覆盖多语言 README。",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#ffeb3b",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1757076471088_ivg3e2nh4"
+    }
+  ]
+}

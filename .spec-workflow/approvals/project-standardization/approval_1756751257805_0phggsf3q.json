@@ -1,0 +1,12 @@
+{
+  "id": "approval_1756751257805_0phggsf3q",
+  "title": "更新后的项目规范化需求文档审批",
+  "filePath": ".spec-workflow/specs/project-standardization/requirements.md",
+  "type": "document",
+  "status": "rejected",
+  "createdAt": "2025-09-01T18:27:37.805Z",
+  "category": "spec",
+  "categoryName": "project-standardization",
+  "response": "改成 src 布局",
+  "respondedAt": "2025-09-01T18:30:41.964Z"
+}
