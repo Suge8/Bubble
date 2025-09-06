@@ -10,7 +10,7 @@
   - 复用：现有窗口集合与构造逻辑。
   - 需求：需求 2
 
-- [-] 2. 更新多窗口管理器以维护页面计数并对外通知
+- [x] 2. 更新多窗口管理器以维护页面计数并对外通知
   - 文件：`src/bubblebot/components/multiwindow_manager.py`
   - 增加：
     - 属性 `on_page_count_changed: Optional[Callable[[int,int],None]]`；
@@ -21,7 +21,7 @@
   - 复用：既有窗口创建/关闭路径。
   - 需求：需求 2
 
-- [-] 3. 在 AppDelegate 中接入计数回调并实现阈值 Toast 逻辑
+- [x] 3. 在 AppDelegate 中接入计数回调并实现阈值 Toast 逻辑
   - 文件：`src/bubblebot/app.py`
   - 新增：
     - 方法 `notify_page_count_changed(old: int, new: int)`：当满足 `old < 5 and new == 5` 时触发一次 `show_toast`；当后续降到 `<5` 再升到 `==5` 时再次触发；对 `>5` 不重复提示。
@@ -33,7 +33,7 @@
   - 复用：现有 i18n 与根视图叠层容器。
   - 需求：需求 2
 
-- [-] 4. 新增 ToastManager 工具（轻量叠层与动画）
+- [x] 4. 新增 ToastManager 工具（轻量叠层与动画）
   - 文件：`src/bubblebot/components/utils/toast_manager.py`（新建）
   - 实现：
     - `show(text: str, parent: NSView, duration: float = 3.0)`：创建圆角浅色/深色适配的提示条，淡入显示、定时淡出并移除；多次调用复用同一实例或覆盖显示。
@@ -41,7 +41,7 @@
   - 目的：解耦 UI 提示实现，复用性更强。
   - 需求：需求 2
 
-- [-] 5. 文案与本地化
+- [x] 5. 文案与本地化
   - 文件：`src/bubblebot/i18n/strings_zh.json`, `src/bubblebot/i18n/strings_en.json`
   - 新增键：`"toast.tooManyPages": "页面较多可能占用内存导致卡顿"`（中文）、`"toast.tooManyPages": "Opening many pages may cause memory usage and lag"`（英文）。
   - App 中调用 `self._i18n_or_default('toast.tooManyPages', '页面较多可能占用内存导致卡顿')`。

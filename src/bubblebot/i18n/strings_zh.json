@@ -65,6 +65,9 @@
   "settings.launchAtLogin": "开机启动",
   "settings.hotkey": "快捷键",
   "settings.clearCache": "清除缓存",
+  "settings.clearCacheConfirmTitle": "清除缓存？",
+  "settings.clearCacheConfirmMessage": "这将清除网页缓存并注销所有登录状态，是否继续？",
+  "button.confirm": "确认",
   "settings.clearCacheDone": "浏览器缓存已清除",
   "errors.unsupportedPlatform": "不支持的 AI 平台"
 }

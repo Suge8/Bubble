@@ -394,8 +394,11 @@ class HomepageManager(NSObject):
             wl = _windows_list(pid)
             wcnt = len(wl)
             # 始终渲染按钮与气泡（隐藏时保留占位，避免布局抖动）
-            more_btn = f'<button class="more{("" if is_on else " hidden")}">⋯</button>'
-            bubble = f'<span class="bubble{("" if wcnt>1 else " hidden")}">{wcnt}</span>'
+            # 省略号在平台启用时始终可见（即便为0页也可“新建页面”）
+            # 将省略号替换为加号；选中卡片后显示加号，未选中隐藏
+            more_btn = f'<button class="more{("" if is_on else " hidden")}">+</button>'
+            # 首次添加也要有反馈：>=1 显示气泡
+            bubble = f'<span class="bubble{("" if wcnt>=1 else " hidden")}">{wcnt}</span>'
             # 本地化名称（简洁）
             try:
                 title_txt = _t(f'platform.{pid}', default=info.get('display_name') or info.get('name') or pid.title())
@@ -469,9 +472,9 @@ class HomepageManager(NSObject):
                 .hrow .title .icon {{ width:18px; height:18px; border-radius:4px; object-fit:cover; }}
                 .hrow .title .name {{ display:inline-block; max-width:40%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
                 .hrow .title .desc {{ margin-left:10px; font-weight:500; font-size:12px; color:#6b7280; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; text-align:center; }}
-                .hrow .right {{ display:flex; align-items:center; gap:10px; width:60px; justify-content:flex-end; }}
-                .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:6px; border:1px solid var(--border); background:#fff; cursor:pointer; }}
-                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#111; color:#fff; font-size:12px; }}
+                .hrow .right {{ display:flex; align-items:center; gap:8px; width:56px; justify-content:flex-end; }}
+                .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:14px; line-height:1; }}
+                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:#111; color:#fff; font-size:11px; }}
                 .hidden {{ visibility:hidden; opacity:0; }}
                 .ripple {{ position:absolute; border-radius:50%; transform:scale(0); background:rgba(0,0,0,.12); animation:ripple .45s ease-out; pointer-events:none; }}
                 @keyframes ripple {{ to {{ transform:scale(1); opacity:0; }} }}
@@ -536,11 +539,17 @@ class HomepageManager(NSObject):
                     if (btn) {
                         btn.addEventListener('click', e=>{
                             e.stopPropagation();
-                            const rect = btn.getBoundingClientRect();
-                            menu.style.display='block';
-                            menu.style.left = (rect.left + window.scrollX - 10) + 'px';
-                            menu.style.top = (rect.bottom + window.scrollY + 6) + 'px';
-                            menu.dataset.pid = row.dataset.pid;
+                            const pid = row.dataset.pid;
+                            // 点击加号：直接新增页面，并即时+1显示
+                            post({action:'addWindow', platformId: pid});
+                            try {
+                                const b = row.querySelector('.bubble');
+                                if (b) {
+                                    const n = Math.max(0, parseInt(b.textContent||'0', 10));
+                                    b.textContent = String(n + 1);
+                                    b.classList.remove('hidden');
+                                }
+                            } catch(_e){}
                         });
                     }
                     const bubble = row.querySelector('.bubble');
@@ -558,7 +567,7 @@ class HomepageManager(NSObject):
                         });
                     }
                 });
-                menu.addEventListener('click', e=>{ const it = e.target.closest('.item'); if (!it) return; const pid = menu.dataset.pid; menu.style.display='none'; if (it.dataset.action==='duplicate') { post({action:'addWindow', platformId: pid}); } });
+                menu.addEventListener('click', e=>{ const it = e.target.closest('.item'); if (!it) return; const pid = menu.dataset.pid; menu.style.display='none'; if (it.dataset.action==='duplicate' || it.dataset.action==='new') { post({action:'addWindow', platformId: pid}); } });
                 pop.addEventListener('click', e=>{ const del = e.target.closest('.pop-del'); if (!del) return; const pid = pop.dataset.pid; const wid = del.dataset.wid; pop.style.display='none'; post({action:'removeWindow', platformId: pid, windowId: wid}); });
                 document.addEventListener('click', ()=>{ menu.style.display='none'; pop.style.display='none'; });
             </script>

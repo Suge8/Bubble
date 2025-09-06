@@ -441,18 +441,49 @@ class AppDelegate(NSObject):
         """在顶栏区域显示轻量 Toast，自动消失。"""
         try:
             from .components.utils.toast_manager import ToastManager
-            parent = self.top_bar if getattr(self, 'top_bar', None) is not None else (self.window.contentView() if self.window else None)
+            # 选择可见容器并始终将 toast 提到最上层
+            parent = None
+            rel = None
+            # 多窗口：使用活动窗口 contentView
+            try:
+                if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
+                    nsw = getattr(self.multiwindow_manager, 'active_ns_window', None)
+                    if nsw is None:
+                        try:
+                            vals = list(getattr(self.multiwindow_manager, 'ns_windows', {}).values())
+                            nsw = vals[0] if vals else None
+                        except Exception:
+                            nsw = None
+                    if nsw is not None:
+                        parent = nsw.contentView()
+            except Exception:
+                parent = None
+            # 非多窗口：使用根视图/主窗口 contentView
+            if parent is None:
+                parent = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
+            # 记录调试信息（仅 BB_DEBUG=1 时输出）
+            try:
+                print(f"DEBUG: show_toast parent={parent} homepage={bool(getattr(self,'last_loaded_is_homepage',False))} multi={bool(getattr(self,'is_multiwindow_mode',False))}")
+            except Exception:
+                pass
             if parent is None:
                 return
-            ToastManager.show(text=text, parent=parent, duration=duration)
+            # 让 Toast 永远浮在最上层（relative_to=None 表示置顶）
+            ToastManager.show(text=text, parent=parent, duration=duration, relative_to=None)
         except Exception as e:
             print(f"WARNING: show_toast 失败: {e}")
 
     def _maybe_show_page_threshold_toast(self, old: int, new: int):
         try:
-            if old < 5 and new == 5:
+            # 规则：当总页数首次从 <=5 跨到 >5 时提示一次；
+            # 之后减少到 <=5 再次跨过 >5 时再次提示。
+            if int(old) <= 5 and int(new) > 5:
                 msg = self._i18n_or_default('toast.tooManyPages', '页面较多可能占用内存导致卡顿')
                 self.show_toast(msg, duration=3.0)
+            try:
+                print(f"DEBUG: page_threshold_check old={old} new={new} trigger={int(old)<=5 and int(new)>5}")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -1127,6 +1158,7 @@ class AppDelegate(NSObject):
             pass
         self.back_button.setTarget_(self)
         self.back_button.setAction_("navigateBack:")
+        # 主页默认不显示返回按钮；进入平台页时显示
         self.back_button.setHidden_(True)
         self.back_button.setAutoresizingMask_(NSViewMaxXMargin | NSViewMinYMargin)
         self.top_bar.addSubview_(self.back_button)
@@ -1213,6 +1245,7 @@ class AppDelegate(NSObject):
                 except Exception:
                     pass
                 self.top_bar.addSubview_positioned_relativeTo_(self.back_button_bg, NSWindowBelow, self.back_button)
+                # 与选择器背景一致，但在主页默认隐藏
                 self.back_button_bg.setHidden_(True)
             else:
                 self.back_button_bg.setFrame_(NSMakeRect(bx, by, diameter, diameter))
@@ -1899,11 +1932,36 @@ class AppDelegate(NSObject):
                         pass
                     return
                 if action == "addPlatform" and self.homepage_manager:
+                    # 启用平台，并在首次启用时自动创建第1个页面
                     self.homepage_manager.add_platform(platform_id)
-                    # 无刷新更新行状态 + 下拉实时同步
+                    # 统计旧/新总数，用于阈值提示
+                    try:
+                        old_cnt = int(self.homepage_manager.get_total_window_count())
+                    except Exception:
+                        old_cnt = 0
+                    try:
+                        # 若当前该平台无页面，则自动新增1个初始页面
+                        cur_map = self.homepage_manager.get_platform_windows(platform_id) or {}
+                        if not cur_map:
+                            from uuid import uuid4
+                            new_id = str(uuid4())
+                            self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
+                    except Exception:
+                        pass
+                    # 无刷新更新行状态与气泡 + 下拉实时同步
                     self._update_homepage_platform_active(platform_id, True)
+                    self._update_homepage_window_count(platform_id)
                     try:
                         self._set_ai_selector_to_home()
+                    except Exception:
+                        pass
+                    # 阈值提示（如 4 -> 5）
+                    try:
+                        new_cnt = int(self.homepage_manager.get_total_window_count())
+                    except Exception:
+                        new_cnt = old_cnt
+                    try:
+                        self.notify_page_count_changed(old_cnt, new_cnt)
                     except Exception:
                         pass
                     return
@@ -1911,6 +1969,17 @@ class AppDelegate(NSObject):
                     # 为平台新增页面实例（默认常驻；超过5个将提示内存警告气泡）
                     from uuid import uuid4
                     new_id = str(uuid4())
+                    # 统计旧/新总数，统一走 notify 回调逻辑
+                    try:
+                        old_cnt = int(self.homepage_manager.get_total_window_count())
+                    except Exception:
+                        old_cnt = 0
+                    # 平台维度计数（提升主页体验：单平台达到5个也提示）
+                    try:
+                        _platform_before = self.homepage_manager.get_platform_windows(platform_id) or {}
+                        old_platform_cnt = int(len(_platform_before))
+                    except Exception:
+                        old_platform_cnt = 0
                     ok = self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
                     if ok:
                         # 无刷新更新主页行的窗口气泡 + 下拉实时同步
@@ -1920,19 +1989,22 @@ class AppDelegate(NSObject):
                         except Exception:
                             pass
                         try:
-                            old_cnt = 0
-                            new_cnt = 0
-                            # 4→5 跃迁提示一次
-                            old_cnt = max(0, self._page_count_last)
                             new_cnt = int(self.homepage_manager.get_total_window_count())
-                            self._maybe_show_page_threshold_toast(old_cnt, new_cnt)
-                            self._page_count_last = new_cnt
+                        except Exception:
+                            new_cnt = old_cnt
+                        # 统一用回调入口（根据全局总数从 <=5 -> >5 时提示）
+                        try:
+                            self.notify_page_count_changed(old_cnt, new_cnt)
                         except Exception:
                             pass
                     return
                 if action == "removeWindow" and self.homepage_manager:
                     wid = data.get('windowId') if isinstance(data, dict) else None
                     if platform_id and wid:
+                        try:
+                            old_cnt = int(self.homepage_manager.get_total_window_count())
+                        except Exception:
+                            old_cnt = 0
                         ok = self.homepage_manager.remove_platform_window(platform_id, wid)
                         if ok:
                             # 无刷新更新主页行的窗口气泡 + 下拉实时同步
@@ -1942,8 +2014,12 @@ class AppDelegate(NSObject):
                             except Exception:
                                 pass
                             try:
-                                # 移除不触发提示，仅更新 last 计数供后续参考
-                                self._page_count_last = max(0, int(self.homepage_manager.get_total_window_count()))
+                                new_cnt = max(0, int(self.homepage_manager.get_total_window_count()))
+                            except Exception:
+                                new_cnt = old_cnt
+                            # 统一回调入口（通常不会提示，仅为状态同步）
+                            try:
+                                self.notify_page_count_changed(old_cnt, new_cnt)
                             except Exception:
                                 pass
                     return
@@ -2664,6 +2740,11 @@ class AppDelegate(NSObject):
                 self._set_ai_selector_to_home()
             except Exception:
                 pass
+            # 主页不显示返回按钮
+            try:
+                self.update_back_button_visibility(False)
+            except Exception:
+                pass
             # 已禁用联网图标下载：使用离线生成的字母图标，无需预取
             print("主页已加载")
 
@@ -2689,10 +2770,15 @@ class AppDelegate(NSObject):
         inactive_js = 'false' if active else 'true'
         js = f"""
             (function(){{
-                const row = document.querySelector('.hrow[data-pid="{platform_id}"]');
+                const row = document.querySelector('.hrow[data-pid=\"{platform_id}\"]');
                 if (!row) return;
                 row.classList.toggle('active', {active_js});
-                const btn = row.querySelector('button.more'); if (btn) btn.classList.toggle('hidden', {inactive_js});
+                const btn = row.querySelector('button.more');
+                try {{
+                    const wl = JSON.parse(row.dataset.windows||'[]')||[];
+                    const count = Array.isArray(wl) ? wl.length : 0;
+                    if (btn) btn.classList.toggle('hidden', !({active_js}));
+                }} catch (err) {{ if (btn) btn.classList.toggle('hidden', true); }}
                 if (!{active_js}) {{ const b = row.querySelector('.bubble'); if (b) {{ b.textContent='0'; b.classList.add('hidden'); }} }}
             }})();
         """
@@ -2720,11 +2806,13 @@ class AppDelegate(NSObject):
         count = len(idx_items)
         js = f"""
             (function(){{
-                const row = document.querySelector('.hrow[data-pid="{platform_id}"]');
+                const row = document.querySelector('.hrow[data-pid=\"{platform_id}\"]');
                 if (!row) return;
                 row.dataset.windows = '{js_data.replace("'", "\\'")}';
                 const b = row.querySelector('.bubble');
-                if (b) {{ b.textContent = String({count}); if ({count} > 1) b.classList.remove('hidden'); else b.classList.add('hidden'); }}
+                if (b) {{ b.textContent = String({count}); if ({count} > 0) b.classList.remove('hidden'); else b.classList.add('hidden'); }}
+                const btn = row.querySelector('button.more');
+                if (btn) btn.classList.toggle('hidden', !row.classList.contains('active'));
             }})();
         """
         self._js_eval(js)
@@ -3137,11 +3225,10 @@ class AppDelegate(NSObject):
     def update_back_button_visibility(self, should_show):
         """更新返回按钮显示状态（左上角图标）"""
         try:
-            # 始终显示返回按钮及其背景，保持功能不消失
             if hasattr(self, 'back_button') and self.back_button:
-                self.back_button.setHidden_(False)
+                self.back_button.setHidden_(not bool(should_show))
             if hasattr(self, 'back_button_bg') and self.back_button_bg:
-                self.back_button_bg.setHidden_(False)
+                self.back_button_bg.setHidden_(not bool(should_show))
         except Exception as e:
             print(f"DEBUG: update_back_button_visibility 异常: {e}")
 

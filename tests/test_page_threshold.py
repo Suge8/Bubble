@@ -14,16 +14,15 @@ def test_page_threshold_toast_trigger(monkeypatch):
 
     monkeypatch.setattr(delegate, 'show_toast', fake_toast)
 
-    # 4 -> 5 triggers once
-    delegate.notify_page_count_changed(4, 5)
+    # 5 -> 6 triggers once (total pages > 5)
+    delegate.notify_page_count_changed(5, 6)
     assert len(calls) == 1
 
-    # >5 changes do not trigger
-    delegate.notify_page_count_changed(5, 6)
+    # staying >5 does not trigger repeatedly
     delegate.notify_page_count_changed(6, 7)
     assert len(calls) == 1
 
-    # Drop below then back to 5 triggers again
-    delegate.notify_page_count_changed(3, 4)
-    delegate.notify_page_count_changed(4, 5)
+    # Drop back to <=5 then cross to >5 triggers again
+    delegate.notify_page_count_changed(7, 5)
+    delegate.notify_page_count_changed(5, 6)
     assert len(calls) == 2

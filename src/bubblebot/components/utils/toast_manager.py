@@ -1,6 +1,6 @@
 import objc
-from AppKit import NSView, NSColor, NSTextField, NSFont, NSBezierPath
-from Foundation import NSTimer, NSRunLoop, NSDefaultRunLoopMode
+from AppKit import NSView, NSColor, NSTextField, NSFont, NSBezierPath, NSWindowAbove
+from Foundation import NSTimer, NSRunLoop, NSDefaultRunLoopMode, NSThread, NSOperationQueue
 
 
 class ToastManager:
@@ -12,7 +12,29 @@ class ToastManager:
     _current_view = None
 
     @classmethod
-    def show(cls, text: str, parent: NSView, duration: float = 3.0):
+    def show(cls, text: str, parent: NSView, duration: float = 3.0, relative_to: NSView = None):
+        # Ensure UI work runs on main thread
+        try:
+            if not NSThread.isMainThread():
+                def _call():
+                    try:
+                        ToastManager.show(text=text, parent=parent, duration=duration, relative_to=relative_to)
+                    except Exception:
+                        pass
+                try:
+                    NSOperationQueue.mainQueue().addOperationWithBlock_(_call)
+                except Exception:
+                    # best-effort fallback: schedule immediate timer on main loop
+                    try:
+                        timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
+                            0.0, cls, 'dismissTimerFired:', None, False
+                        )
+                        NSRunLoop.currentRunLoop().addTimer_forMode_(timer, NSDefaultRunLoopMode)
+                    except Exception:
+                        pass
+                return
+        except Exception:
+            pass
         try:
             if cls._current_view is not None:
                 try:
@@ -56,9 +78,16 @@ class ToastManager:
 
             # Attach to parent on top
             try:
-                parent.addSubview_positioned_relativeTo_(view, 1, None)  # 1=NSWindowAbove
+                # 放到最上层；如提供 relative_to，确保在其之上
+                if relative_to is not None:
+                    parent.addSubview_positioned_relativeTo_(view, NSWindowAbove, relative_to)
+                else:
+                    parent.addSubview_positioned_relativeTo_(view, NSWindowAbove, None)
             except Exception:
-                parent.addSubview_(view)
+                try:
+                    parent.addSubview_(view)
+                except Exception:
+                    return
 
             cls._current_view = view
 
@@ -95,4 +124,3 @@ class ToastManager:
                 ToastManager._current_view = None
         except Exception:
             ToastManager._current_view = None
-

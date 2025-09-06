@@ -65,6 +65,9 @@
   "settings.launchAtLogin": "Launch at Login",
   "settings.hotkey": "Hotkey",
   "settings.clearCache": "Clear Cache",
+  "settings.clearCacheConfirmTitle": "Clear Cache?",
+  "settings.clearCacheConfirmMessage": "This will clear web cache and all login sessions. Continue?",
+  "button.confirm": "Confirm",
   "settings.clearCacheDone": "Web cache cleared",
   "errors.unsupportedPlatform": "Unsupported platform"
 }

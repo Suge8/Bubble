@@ -34,6 +34,10 @@ from AppKit import (
     NSColor,
     NSImage,
     NSImageView,
+    # The following may not exist on older macOS; used conditionally
+    # NSImageSymbolConfiguration is looked up dynamically in helpers
+    NSImageLeft,
+    NSImageScaleProportionallyUpOrDown,
     NSBezelStyleRounded,
     NSCursor,
     NSAnimationContext,
@@ -268,6 +272,7 @@ class SettingsWindow(NSObject):
         self.lang_label = None
         self.lang_popup = None
         self.launch_checkbox = None
+        self.launch_label = None
         self.hotkey_label = None
         self.hotkey_value = None
         self.hotkey_box = None
@@ -280,6 +285,15 @@ class SettingsWindow(NSObject):
         self.header_title_label = None
         self.header_art_view = None
         self.bg_blur = None
+        # Small icon views for label rows
+        self.lang_icon_view = None
+        self.hotkey_icon_view = None
+        # Layout tuning offsets
+        self._launch_x_offset = -20  # shift Launch at Login slightly left
+        # Legacy overlay storage (previous approach). We'll remove overlays and
+        # rely on native NSButton image+title rendering for stability.
+        self._button_icon_views = {}
+        self._button_text_labels = {}
         return self
 
     def _create_window(self):
@@ -354,6 +368,8 @@ class SettingsWindow(NSObject):
             pass
         # Apply black/white theme to card and controls
         self._apply_theme()
+
+        # UI text helpers are instance methods so they can also be used in _apply_localization
 
         def add_label(text, x, y, w, h, bold=False):
             lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
@@ -518,14 +534,20 @@ class SettingsWindow(NSObject):
         # Move content slightly downward to compensate the larger logo
         content_down_shift = 12
         language_center = (ly - 36 - content_down_shift) if logo_img is not None else (card_bounds.size.height - 96 - content_down_shift)
-        self.lang_label = add_label(_t('settings.language'), pad_x, language_center - 11, 120, 22)
+        # Shift language title 50px to the right (20 + 30)
+        self.lang_label = add_label(_t('settings.language'), pad_x + 50, language_center - 11, 120, 22)
+        # Attach a nice icon to the Language label (no emoji)
+        try:
+            self._set_label_text_with_icon(self.lang_label, _t('settings.language'), 'globe')
+        except Exception:
+            pass
         # Language dropdown: center align around the content center and slightly shorten width
         content_center_x = card_bounds.size.width / 2 + group_shift_x
         lang_w = 150  # reduce to three-quarters of previous width
         # Move dropdown 45px left from centered position (previous 40 + 5)
         self.lang_popup = BBPointerPopUpButton.alloc().initWithFrame_pullsDown_(
-            # Adjust: move right by +48 relative to current => net offset = -45 + 48 = +3
-            NSMakeRect(content_center_x - lang_w / 2 + 3, language_center - 17, lang_w, 34), False
+            # Nudge a bit further to the right
+            NSMakeRect(content_center_x - lang_w / 2 + 10, language_center - 17, lang_w, 34), False
         )
         self.lang_popup.addItemWithTitle_("English")
         self.lang_popup.addItemWithTitle_("中文")
@@ -565,9 +587,15 @@ class SettingsWindow(NSObject):
         self.card.addSubview_(self.lang_popup)
 
         # Launch at login
+        # Launch at login: revert to original combined control (checkbox + title)
         self.launch_checkbox = BBPointerCheckbox.alloc().initWithFrame_(NSMakeRect(pad_x, 0, 260, 24))
         self.launch_checkbox.setButtonType_(NSSwitchButton)
-        self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
+        # Add icon + text to checkbox (native image+title; indicator在最左)
+        try:
+            self._set_control_title_with_icon(self.launch_checkbox, _t('settings.launchAtLogin'), 'power', center_group=False)
+        except Exception:
+            # Fallback to plain text
+            self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
         try:
             self.launch_checkbox.setFont_(NSFont.systemFontOfSize_(16))
         except Exception:
@@ -588,11 +616,17 @@ class SettingsWindow(NSObject):
 
         # Hotkey row — center aligned using row centers
         hotkey_center = language_center - row_gap
-        self.hotkey_label = add_label(_t('settings.hotkey'), pad_x, hotkey_center - 12, 80, 24)
+        # Shift hotkey title 50px to the right (20 + 30)
+        self.hotkey_label = add_label(_t('settings.hotkey'), pad_x + 50, hotkey_center - 12, 80, 24)
+        # Attach icon to Hotkey label
+        try:
+            self._set_label_text_with_icon(self.hotkey_label, _t('settings.hotkey'), 'keyboard')
+        except Exception:
+            pass
         # Center the value + button group horizontally to the same center as language dropdown
         # Create a bordered hotkey box (container) with a centered text label that resizes to content
         hv_w = 160  # temporary width; will be replaced by dynamic sizing
-        spacing_hotkey = 16  # revert to modest default gap
+        spacing_hotkey = 28  # increase gap between hotkey box and Change
         group_w = hv_w + spacing_hotkey + 112
         min_left = pad_x + 80 + 12
         hv_base = max(min_left, (card_bounds.size.width - group_w) / 2 + group_shift_x)
@@ -640,10 +674,15 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
         # Place the Change button relative to the value so the gap equals spacing_hotkey
-        hotkey_button_x = hv_x_init + hv_w + spacing_hotkey
+        hotkey_button_x = hv_x_init + hv_w + spacing_hotkey + 85  # shift Change/Cancel further right by ~25
         self.hotkey_button = add_button(_t('button.change'), hotkey_button_x, self._hotkey_button_y, 112, 34)
         try:
             self.hotkey_button.setStyleDark_(True)
+        except Exception:
+            pass
+        # Apply icon to Change button (no emoji)
+        try:
+            self._set_control_title_with_icon(self.hotkey_button, _t('button.change'), 'pencil')
         except Exception:
             pass
         self.hotkey_button.setTarget_(self)
@@ -653,28 +692,31 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
 
-        # Clear cache — center aligned using row centers (reverted positioning)
+        # Clear cache — center aligned using row centers
         clear_center = hotkey_center - row_gap
-        cc_w, cc_h = 112, 34  # keep width, but center horizontally
-        cc_x = (card_bounds.size.width - cc_w) / 2 + group_shift_x
+        cc_w, cc_h = 146, 34  # 1.3x wider (from 112), keep centered by formula below
+        cc_x = (card_bounds.size.width - cc_w) / 2 + group_shift_x + 8  # nudge Clear Cache slightly right
         self.clear_cache_button = add_button(_t('settings.clearCache'), cc_x, clear_center - cc_h / 2, cc_w, cc_h)
         try:
             self.clear_cache_button.setStyleDark_(True)
         except Exception:
             pass
+        # Apply icon to Clear Cache (no emoji)
+        try:
+            self._set_control_title_with_icon(self.clear_cache_button, _t('settings.clearCache'), 'broom')
+        except Exception:
+            pass
         self.clear_cache_button.setTarget_(self)
         self.clear_cache_button.setAction_("clearCache:")
 
-        # Save / Cancel — center aligned using row centers (reverted positioning)
+        # Save / Cancel — align Save with Clear Cache horizontally (left edges), Cancel align with Change
         extra_bottom_gap = 12  # slightly larger gap between Clear and Save
         bottom_center = clear_center - (row_gap + extra_bottom_gap)
-        cancel_w, cancel_h = 104, 34
-        save_w, save_h = 104, 34
+        cancel_w, cancel_h = 112, 34  # unified button width
+        save_w, save_h = 112, 34      # unified button width
         spacing = 16
-        group_w2 = save_w + spacing + cancel_w
-        group_left = (card_bounds.size.width - group_w2) / 2 + group_shift_x
-        save_x = group_left
-        cancel_x = group_left + save_w + spacing
+        save_x = cc_x  # align Save left edge with Clear Cache left edge
+        cancel_x = hotkey_button_x  # align Cancel left edge with Change button
         self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", save_x, bottom_center - save_h / 2, save_w, save_h)
         self.save_button.setTarget_(self)
         self.save_button.setAction_("saveSettings:")
@@ -685,6 +727,11 @@ class SettingsWindow(NSObject):
         # Black vercel-style buttons
         try:
             self.save_button.setStyleDark_(True)
+        except Exception:
+            pass
+        # Apply icon to Save (no emoji)
+        try:
+            self._set_control_title_with_icon(self.save_button, _t('button.save') if hasattr(self, 'window') else "Save", 'checkmark.circle')
         except Exception:
             pass
         self.cancel_button = add_button(_t('button.cancel'), cancel_x, bottom_center - cancel_h / 2, cancel_w, cancel_h)
@@ -698,10 +745,27 @@ class SettingsWindow(NSObject):
             self.cancel_button.setStyleDark_(True)
         except Exception:
             pass
-        # No extra alignment for Clear Cache; it remains centered above Save/Cancel
-        # Launch at login aligned with Save/Cancel row center
+        # Apply icon to Cancel (no emoji)
         try:
-            self.launch_checkbox.setFrameOrigin_((pad_x, bottom_center - 24 / 2))
+            self._set_control_title_with_icon(self.cancel_button, _t('button.cancel'), 'xmark.circle')
+        except Exception:
+            pass
+        # No extra alignment for Clear Cache; it remains centered above Save/Cancel
+        # Launch at login aligned with Save/Cancel row center — align horizontally with Hotkey title
+        try:
+            self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
+            try:
+                hx = int(self.hotkey_label.frame().origin.x)
+            except Exception:
+                hx = pad_x + 50
+            # Slightly shift left to align with other label rows (a bit more left)
+            self.launch_checkbox.setFrameOrigin_((hx + getattr(self, '_launch_x_offset', -20), bottom_center - 24 / 2))
+            try:
+                if self.launch_label is not None:
+                    # Hide the separate label if it exists from prior layouts
+                    self.launch_label.setHidden_(True)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -754,14 +818,31 @@ class SettingsWindow(NSObject):
             return
         self.window.setTitle_(_t('settings.title'))
         if self.lang_label:
-            self.lang_label.setStringValue_(_t('settings.language'))
+            try:
+                self._set_label_text_with_icon(self.lang_label, _t('settings.language'), 'globe')
+            except Exception:
+                self.lang_label.setStringValue_(_t('settings.language'))
         if self.launch_checkbox:
-            self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
+            try:
+                self._set_control_title_with_icon(self.launch_checkbox, _t('settings.launchAtLogin'), 'power', center_group=False)
+            except Exception:
+                try:
+                    self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
+                except Exception:
+                    pass
         if self.hotkey_label:
-            self.hotkey_label.setStringValue_(_t('settings.hotkey'))
+            try:
+                self._set_label_text_with_icon(self.hotkey_label, _t('settings.hotkey'), 'keyboard')
+            except Exception:
+                self.hotkey_label.setStringValue_(_t('settings.hotkey'))
         if self.hotkey_button:
             try:
                 self.hotkey_button.setStyleDark_(True)
+            except Exception:
+                pass
+            try:
+                # Re-apply iconized title after localization changes
+                self._set_control_title_with_icon(self.hotkey_button, _t('button.change'), 'pencil')
             except Exception:
                 pass
         if self.clear_cache_button:
@@ -770,16 +851,28 @@ class SettingsWindow(NSObject):
                 self.clear_cache_button.setStyleDark_(True)
             except Exception:
                 pass
+            try:
+                self._set_control_title_with_icon(self.clear_cache_button, _t('settings.clearCache'), 'broom')
+            except Exception:
+                pass
         if self.save_button:
             self.save_button.setTitle_(_t('button.save'))
             try:
                 self.save_button.setStyleDark_(True)
             except Exception:
                 pass
+            try:
+                self._set_control_title_with_icon(self.save_button, _t('button.save'), 'checkmark.circle')
+            except Exception:
+                pass
         if self.cancel_button:
             self.cancel_button.setTitle_(_t('button.cancel'))
             try:
                 self.cancel_button.setStyleDark_(True)
+            except Exception:
+                pass
+            try:
+                self._set_control_title_with_icon(self.cancel_button, _t('button.cancel'), 'xmark.circle')
             except Exception:
                 pass
         if self.header_title_label:
@@ -871,15 +964,170 @@ class SettingsWindow(NSObject):
         self._dismiss(animated=True)
 
     def clearCache_(self, sender):
+        # Present a custom Vercel-style confirmation overlay
+        try:
+            self._present_clear_cache_confirm()
+        except Exception:
+            # Fallback: perform clear directly if overlay failed to present
+            self._perform_clear_cache()
+
+    def _perform_clear_cache(self):
         try:
             if hasattr(self.app_delegate, 'clearWebViewData_'):
                 self.app_delegate.clearWebViewData_(None)
-            # Show localized toast feedback
             self._show_toast(_t('settings.clearCacheDone'))
         except Exception:
-            # Best-effort feedback even if clearing threw
             try:
                 self._show_toast(_t('settings.clearCacheDone'))
+            except Exception:
+                pass
+
+    def _present_clear_cache_confirm(self):
+        # Avoid showing multiple overlays
+        if getattr(self, '_confirm_overlay', None) is not None:
+            return
+        container = self.card if hasattr(self, 'card') and self.card else self.window.contentView()
+        bounds = container.bounds()
+        # Dimmed backdrop
+        overlay = NSView.alloc().initWithFrame_(bounds)
+        overlay.setWantsLayer_(True)
+        try:
+            overlay.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.36).CGColor())
+        except Exception:
+            pass
+        # Dialog card
+        dlg_w, dlg_h = 360, 168
+        dlg_x = int((bounds.size.width - dlg_w) / 2)
+        dlg_y = int((bounds.size.height - dlg_h) / 2)
+        dialog = NSView.alloc().initWithFrame_(NSMakeRect(dlg_x, dlg_y, dlg_w, dlg_h))
+        try:
+            dialog.setWantsLayer_(True)
+            dark = self._is_dark()
+            bg = (NSColor.colorWithCalibratedWhite_alpha_(0.12, 0.96) if dark else NSColor.whiteColor())
+            dialog.layer().setBackgroundColor_(bg.CGColor())
+            dialog.layer().setCornerRadius_(14.0)
+            dialog.layer().setBorderWidth_(1.0)
+            border = (NSColor.whiteColor().colorWithAlphaComponent_(0.12) if dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
+            dialog.layer().setBorderColor_(border.CGColor())
+            # Soft shadow
+            try:
+                dialog.layer().setShadowColor_(NSColor.blackColor().CGColor())
+                dialog.layer().setShadowOpacity_(0.18)
+                dialog.layer().setShadowRadius_(12.0)
+                dialog.layer().setShadowOffset_((0.0, -1.0))
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Title and message
+        ttl = NSTextField.alloc().initWithFrame_(NSMakeRect(18, dlg_h - 44, dlg_w - 36, 24))
+        ttl.setBezeled_(False); ttl.setDrawsBackground_(False); ttl.setEditable_(False); ttl.setSelectable_(False)
+        ttl.setStringValue_(_t('settings.clearCacheConfirmTitle', default='Clear Cache?'))
+        try:
+            ttl.setFont_(NSFont.boldSystemFontOfSize_(18))
+            ttl.setTextColor_(NSColor.labelColor())
+        except Exception:
+            pass
+        # Position message to avoid overlap with title and buttons
+        btn_h = 34
+        btn_y = 16
+        msg_y = btn_y + btn_h + 20  # ensure ~20px gap above buttons
+        msg_h = dlg_h - msg_y - 44  # leave space below title area (~44)
+        if msg_h < 28:
+            msg_h = 28
+        msg = NSTextField.alloc().initWithFrame_(NSMakeRect(18, msg_y, dlg_w - 36, msg_h))
+        msg.setBezeled_(False); msg.setDrawsBackground_(False); msg.setEditable_(False); msg.setSelectable_(False)
+        msg.setStringValue_(_t('settings.clearCacheConfirmMessage', default='This will clear web cache and all login sessions. Continue?'))
+        try:
+            msg.setFont_(NSFont.systemFontOfSize_(13))
+            msg.setTextColor_(NSColor.secondaryLabelColor())
+            msg.setLineBreakMode_(0)
+        except Exception:
+            pass
+        dialog.addSubview_(ttl); dialog.addSubview_(msg)
+
+        # Buttons
+        btn_h = 34
+        btn_w = 112
+        spacing = 12
+        total_w = btn_w * 2 + spacing
+        btn_left_x = int((dlg_w - total_w) / 2)
+        btn_y = 16
+        confirm_btn = VercelButton.alloc().initWithFrame_(NSMakeRect(btn_left_x, btn_y, btn_w, btn_h))
+        confirm_btn.setTitle_(_t('button.confirm', default='Confirm'))
+        try:
+            # Solid black style
+            confirm_btn.setStyleDark_(True)
+        except Exception:
+            pass
+        confirm_btn.setTarget_(self)
+        confirm_btn.setAction_("confirmClearCacheAction:")
+
+        cancel_btn = VercelButton.alloc().initWithFrame_(NSMakeRect(btn_left_x + btn_w + spacing, btn_y, btn_w, btn_h))
+        cancel_btn.setTitle_(_t('button.cancel'))
+        try:
+            # White background with black border (ghost)
+            cancel_btn.setStyleDark_(False)
+            cancel_btn.setWantsLayer_(True)
+            cancel_btn.layer().setBackgroundColor_(NSColor.whiteColor().CGColor())
+            cancel_btn.layer().setBorderWidth_(1.0)
+            cancel_btn.layer().setBorderColor_(NSColor.blackColor().colorWithAlphaComponent_(0.85).CGColor())
+        except Exception:
+            pass
+        cancel_btn.setTarget_(self)
+        cancel_btn.setAction_("cancelClearCacheConfirm:")
+
+        dialog.addSubview_(confirm_btn); dialog.addSubview_(cancel_btn)
+
+        # Iconize overlay buttons too (ensure it fits; otherwise fallback handled in helper)
+        try:
+            self._set_control_title_with_icon(confirm_btn, _t('button.confirm', default='Confirm'), 'checkmark')
+            self._set_control_title_with_icon(cancel_btn, _t('button.cancel'), 'xmark')
+        except Exception:
+            pass
+
+        # Assemble
+        overlay.addSubview_(dialog)
+        overlay.setAlphaValue_(0.0)
+        container.addSubview_(overlay)
+        self._confirm_overlay = overlay
+        try:
+            if os.environ.get('BB_NO_EFFECTS') != '1':
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.currentContext().setDuration_(0.18)
+                overlay.animator().setAlphaValue_(1.0)
+                NSAnimationContext.endGrouping()
+            else:
+                overlay.setAlphaValue_(1.0)
+        except Exception:
+            overlay.setAlphaValue_(1.0)
+
+    def cancelClearCacheConfirm_(self, sender):
+        self._dismiss_confirm_overlay()
+
+    def confirmClearCacheAction_(self, sender):
+        try:
+            self._perform_clear_cache()
+        finally:
+            self._dismiss_confirm_overlay()
+
+    def _dismiss_confirm_overlay(self):
+        try:
+            overlay = getattr(self, '_confirm_overlay', None)
+            if overlay is None:
+                return
+            if os.environ.get('BB_NO_EFFECTS') != '1':
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.currentContext().setDuration_(0.18)
+                overlay.animator().setAlphaValue_(0.0)
+                NSAnimationContext.endGrouping()
+            overlay.removeFromSuperview()
+        except Exception:
+            pass
+        finally:
+            try:
+                setattr(self, '_confirm_overlay', None)
             except Exception:
                 pass
 
@@ -950,8 +1198,11 @@ class SettingsWindow(NSObject):
 
             # Update the bordered box frame around the text (with slight upward offset)
             box_h = 28
-            # Move the hotkey box 32px left relative to Save button's left edge
-            hv_x = save_x - 32
+            # Align the hotkey box left edge with the language dropdown left edge, then nudge right a bit
+            try:
+                hv_x = int(self.lang_popup.frame().origin.x) + 20  # nudge the hotkey box slightly left from previous
+            except Exception:
+                hv_x = save_x + 20
             hv_y = self._hotkey_value_y - (box_h - 24) / 2 + getattr(self, '_hotkey_box_y_offset', 0)
             self.hotkey_box.setFrame_(NSMakeRect(hv_x, hv_y, hv_w, box_h))
             try:
@@ -964,17 +1215,40 @@ class SettingsWindow(NSObject):
             lbl_x = 0
             lbl_w = hv_w
             lbl_h = 24
-            lbl_y = (box_h - lbl_h) / 2
+            # Move the text slightly downward within the box (box stays at same Y)
+            lbl_y = (box_h - lbl_h) / 2 - 2
             self.hotkey_value.setFrame_(NSMakeRect(lbl_x, lbl_y, lbl_w, lbl_h))
             try:
                 self.hotkey_value.setAlignment_(NSTextAlignmentCenter)
             except Exception:
                 pass
 
-            # Reposition the Change button to the right of the box using the configured gap
-            hotkey_button_x = hv_x + hv_w + self._hotkey_spacing
-            self.hotkey_button.setFrameOrigin_((hotkey_button_x, self._hotkey_button_y))
-            # Do not reposition other buttons here (reverted to original behavior)
+            # Keep Change and Cancel positions unchanged (do not alter their X)
+            try:
+                if self.hotkey_button is not None:
+                    hb_frame = self.hotkey_button.frame()
+                    self.hotkey_button.setFrameOrigin_((hb_frame.origin.x, self._hotkey_button_y))
+            except Exception:
+                pass
+            # Keep Launch checkbox horizontally aligned with the Hotkey title (not the dropdown)
+            try:
+                if self.launch_checkbox is not None and self.hotkey_label is not None:
+                    lc_frame = self.launch_checkbox.frame()
+                    hx = int(self.hotkey_label.frame().origin.x)
+                    off = getattr(self, '_launch_x_offset', -20)
+                    self.launch_checkbox.setFrameOrigin_((hx + off, lc_frame.origin.y))
+            except Exception:
+                pass
+
+            # Align Save button's horizontal center with the hotkey box center
+            try:
+                if self.save_button is not None:
+                    sb_frame = self.save_button.frame()
+                    hv_center = hv_x + (hv_w / 2.0)
+                    new_save_x = int(hv_center - (sb_frame.size.width / 2.0))
+                    self.save_button.setFrameOrigin_((new_save_x, sb_frame.origin.y))
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -1180,5 +1454,266 @@ class SettingsWindow(NSObject):
                 toast.animator().setAlphaValue_(0.0)
                 NSAnimationContext.endGrouping()
             toast.removeFromSuperview()
+        except Exception:
+            pass
+
+    # -----------------------------
+    # Icon helpers (no emoji)
+    # -----------------------------
+    def _create_symbol_image(self, symbol_name: str | None, point_size: float = 16.0):
+        """Create an NSImage from SF Symbols when available.
+        Returns None if the symbol or API isn't available.
+        """
+        if not symbol_name:
+            return None
+        try:
+            # Lazily import to keep compatibility on older macOS/PyObjC
+            from AppKit import NSImage
+            try:
+                # macOS 11+
+                img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol_name, None)
+            except Exception:
+                img = None
+            if img is None:
+                return None
+            try:
+                # Prefer template so it tints with contentTintColor
+                img.setTemplate_(True)
+            except Exception:
+                pass
+            try:
+                # Attempt to apply size configuration when available
+                from AppKit import NSImageSymbolConfiguration
+                conf = NSImageSymbolConfiguration.configurationWithPointSize_weight_scale_(point_size, 0, 1)
+                img = img.imageWithSymbolConfiguration_(conf)
+            except Exception:
+                # Fallback: set a nominal size
+                try:
+                    img.setSize_((point_size, point_size))
+                except Exception:
+                    pass
+            return img
+        except Exception:
+            return None
+
+    def _map_hint_to_symbol(self, control, hint: str | None) -> str | None:
+        """Best-effort mapping from a control context or legacy emoji hint to an SF Symbol name."""
+        # Prefer explicit hint if it already looks like a symbol name
+        if hint and all(ch.islower() or ch.isdigit() or ch in {'.', '_'} for ch in hint):
+            return hint
+        # Control identity mapping
+        try:
+            if control is getattr(self, 'save_button', None):
+                return 'checkmark.circle'
+            if control is getattr(self, 'cancel_button', None):
+                return 'xmark.circle'
+            if control is getattr(self, 'hotkey_button', None):
+                return 'pencil'
+            if control is getattr(self, 'clear_cache_button', None):
+                # Prefer broom if available, else trash
+                return 'broom'
+            if control is getattr(self, 'launch_checkbox', None):
+                return 'arrow.triangle.2.circlepath'
+        except Exception:
+            pass
+        # Legacy emoji hint mapping
+        mapping = {
+            '✔️': 'checkmark', '✅': 'checkmark',
+            '✖️': 'xmark', '❌': 'xmark',
+            '🧹': 'broom',
+            '✏️': 'pencil',
+            '💾': 'square.and.arrow.down',
+            '🌐': 'globe',
+            '🔄': 'arrow.triangle.2.circlepath',
+            '⌨️': 'keyboard',
+        }
+        return mapping.get(hint or '', None)
+
+    def _apply_button_tint(self, control):
+        try:
+            dark = bool(getattr(control, '_dark_style', False)) or self._is_dark()
+            from AppKit import NSColor
+            tint = NSColor.whiteColor() if dark else NSColor.labelColor()
+            control.setContentTintColor_(tint)
+            # Also tint any attached icon subview
+            try:
+                key = int(objc.pyobjc_id(control))
+            except Exception:
+                key = id(control)
+            iv = self._button_icon_views.get(key)
+            if iv is not None:
+                try:
+                    iv.setContentTintColor_(tint)
+                except Exception:
+                    pass
+            # Tint overlay text label if present
+            lbl = self._button_text_labels.get(key)
+            if lbl is not None:
+                try:
+                    lbl.setTextColor_(tint)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _set_control_title_with_icon(self, control, title: str, icon_hint: str | None = None, center_group: bool = True):
+        """Use native NSButton image+title rendering so icon与文字同在按钮内显示且居中。
+        兼容复选框：指示器在最左，图标紧随其后，再是文字。
+        """
+        # Remove any legacy overlays if存在，防止叠加
+        try:
+            key = int(objc.pyobjc_id(control))
+        except Exception:
+            key = id(control)
+        try:
+            iv = self._button_icon_views.pop(key, None)
+            if iv is not None:
+                iv.removeFromSuperview()
+        except Exception:
+            pass
+        try:
+            lbl = self._button_text_labels.pop(key, None)
+            if lbl is not None:
+                lbl.removeFromSuperview()
+        except Exception:
+            pass
+
+        # Only proceed for NSButton-like controls
+        try:
+            from AppKit import NSButton
+            if not isinstance(control, NSButton):
+                return
+        except Exception:
+            return
+
+        # Build symbol with fallbacks (e.g., broom -> trash)
+        symbol = self._map_hint_to_symbol(control, icon_hint) or ''
+        candidates = [symbol]
+        if symbol == 'broom':
+            candidates += ['trash', 'trash.circle']
+        elif symbol in ('checkmark.circle', 'checkmark'):
+            candidates += ['checkmark.circle']
+        elif symbol in ('xmark.circle', 'xmark'):
+            candidates += ['xmark.circle']
+        img = None
+        for name in filter(None, candidates):
+            img = self._create_symbol_image(name, point_size=18.0)
+            if img is not None:
+                break
+
+        # Set title first (完整标题，避免截断)
+        try:
+            control.setTitle_(title or '')
+        except Exception:
+            pass
+
+        # Attach image if available
+        try:
+            if img is not None:
+                control.setImage_(img)
+                # 图标在左、文字在右
+                control.setImagePosition_(NSImageLeft)
+                try:
+                    cell = control.cell()
+                    if cell is not None:
+                        cell.setImagePosition_(NSImageLeft)
+                        # For normal buttons,缩短图文间距；复选框也用更紧凑的间距
+                        try:
+                            # Closer spacing
+                            cell.setImageHugsTitle_(True)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                # Add a tiny hair space for normal buttons only; checkbox不加，整体更靠左
+                try:
+                    base = control.title() or ''
+                    # Strip any leading spaces we may have previously added
+                    for lead in ("\u2009", "\u200a", " "):
+                        if base.startswith(lead):
+                            base = base[len(lead):]
+                            break
+                    add_space = True
+                    try:
+                        add_space = (control.buttonType() != NSSwitchButton)
+                    except Exception:
+                        add_space = True
+                    if add_space:
+                        thin = "\u2009"  # THIN SPACE (slightly larger than hair space)
+                        control.setTitle_(thin + base)
+                    else:
+                        control.setTitle_(base)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 让按钮整体居中布局由系统处理（image+title 作为一个整体）
+        self._apply_button_tint(control)
+
+    def _set_label_text_with_icon(self, label, text: str, icon_hint: str | None = None):
+        """Attach a small image view to the left of a label without using emoji."""
+        if not label:
+            return
+        try:
+            label.setStringValue_(text or '')
+        except Exception:
+            pass
+        try:
+            frame = label.frame()
+            size = 16
+            margin = 6
+            icon_x = int(frame.origin.x - size - margin)
+            # Nudge upward a bit to visually align with text baseline
+            icon_y = int(frame.origin.y + (frame.size.height - size) / 2) + 2
+
+            # Pick or build image view holder for known labels
+            iv_attr = None
+            if label is getattr(self, 'lang_label', None):
+                iv_attr = 'lang_icon_view'
+            elif label is getattr(self, 'hotkey_label', None):
+                iv_attr = 'hotkey_icon_view'
+            # Get or create the image view
+            iv = getattr(self, iv_attr, None) if iv_attr else None
+            if iv is None:
+                try:
+                    iv = NSImageView.alloc().initWithFrame_(NSMakeRect(icon_x, icon_y, size, size))
+                    iv.setImageScaling_(1)
+                    iv.setWantsLayer_(True)
+                    iv.layer().setCornerRadius_(3.0)
+                    # Insert alongside the label into the same container (card)
+                    (self.card or self.window.contentView()).addSubview_(iv)
+                    try:
+                        iv.setAutoresizingMask_(label.autoresizingMask())
+                    except Exception:
+                        pass
+                    if iv_attr:
+                        setattr(self, iv_attr, iv)
+                except Exception:
+                    return
+            else:
+                try:
+                    iv.setFrame_(NSMakeRect(icon_x, icon_y, size, size))
+                except Exception:
+                    pass
+            # Load and apply the symbol image
+            symbol = icon_hint or self._map_hint_to_symbol(None, icon_hint)
+            if not symbol:
+                # Fallback mapping by label identity
+                if label is getattr(self, 'lang_label', None):
+                    symbol = 'globe'
+                elif label is getattr(self, 'hotkey_label', None):
+                    symbol = 'keyboard'
+            img = self._create_symbol_image(symbol, point_size=15.0)
+            if img is not None:
+                try:
+                    iv.setImage_(img)
+                    # Tint to label color if possible
+                    try:
+                        iv.setContentTintColor_(label.textColor())
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
         except Exception:
             pass
