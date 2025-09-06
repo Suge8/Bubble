@@ -74,7 +74,7 @@
   - 覆盖：系统语言默认、t() 回退、设置保存语言/开机启动/快捷键（Darwin mock/跳过）、状态栏提示刷新。
   - Purpose: 可靠性。
 
-- [ ] 5.2 测试：状态栏菜单（三项 + 提示）
+- [x] 5.2 测试：状态栏菜单（三项 + 提示）
   - File: tests/test_status_bar.py (update/new)
   - 校验菜单仅三项，第一项不可点击且随快捷键变化，无 Home/Show/Hide/Set New Trigger/Clear Web Cache。
   - Purpose: 防回归。
@@ -84,7 +84,7 @@
   - 顶部多语言导航；显著“Download for macOS”链接至 Releases；快速开始先推荐下载使用，再给开发运行简述；移除 Autolauncher/旧菜单说明；多语言内容结构同步。
   - Purpose: 推广与易用。
 
-- [ ] 6.1 统一多窗口切换方法命名（保留）
+- [x] 6.1 统一多窗口切换方法命名（保留）
   - File: src/bubblebot/components/multiwindow_manager.py
   - 将 `switchToWindow_` 重命名为 `switch_to_window_`，修正调用点。
   - Purpose: 统一命名与稳定性。

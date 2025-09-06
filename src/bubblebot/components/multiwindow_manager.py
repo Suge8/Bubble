@@ -99,7 +99,8 @@ class MultiWindowManager(NSObject):
     多窗口管理器主类
     
     负责管理所有AI窗口实例的生命周期，包括创建、销毁、切换、状态管理等功能。
-    支持最多5个窗口同时运行，每个窗口可以是不同的AI平台。
+    默认不限制窗口数量，每个窗口可以是不同的AI平台。
+    对外提供页面计数变更回调以便上层做 UI 提示。
     """
     
     def init(self):
@@ -117,6 +118,9 @@ class MultiWindowManager(NSObject):
             
             # 活动窗口跟踪
             self.active_ns_window = None
+            
+            # 页面计数变化回调：Optional[Callable[[int,int], None]]
+            self.on_page_count_changed = None
             
             # 窗口配置
             self.default_window_size = (550, 580)
@@ -140,9 +144,11 @@ class MultiWindowManager(NSObject):
         Returns:
             str: 窗口ID，如果创建失败返回None
         """
-        # 检查是否可以创建新窗口
+        # 记录创建前页面总数（使用 WindowManager 数据更准确）
+        old_count = len(self.window_manager.windows)
+        # 检查是否可以创建新窗口（默认不限制，除非外部设置了上限）
         if not self.window_manager.can_create_window(platform_id):
-            print(f"平台 {platform_id} 已达到最大窗口数限制")
+            print(f"无法创建新窗口（达到限制或外部约束）: {platform_id}")
             return None
         
         # 获取平台配置
@@ -183,6 +189,14 @@ class MultiWindowManager(NSObject):
         self.window_manager.set_active_window(ai_window.window_id)
         
         print(f"成功创建窗口: {ai_window.window_id} for platform: {platform_id}")
+        # 触发页面计数变更回调
+        try:
+            new_count = len(self.window_manager.windows)
+            cb = getattr(self, 'on_page_count_changed', None)
+            if callable(cb):
+                cb(old_count, new_count)
+        except Exception:
+            pass
         return ai_window.window_id
     
     def closeWindow_(self, window_id):
@@ -202,6 +216,8 @@ class MultiWindowManager(NSObject):
         ns_window = self.ns_windows[window_id]
         ns_window.close()
         
+        # 关闭前记录页面总数
+        old_count = len(self.window_manager.windows)
         # 清理资源
         self._cleanup_window_resources(window_id)
         
@@ -213,9 +229,22 @@ class MultiWindowManager(NSObject):
             self._switch_to_next_window()
         
         print(f"窗口已关闭: {window_id}")
+        # 触发页面计数变更回调
+        try:
+            new_count = len(self.window_manager.windows)
+            cb = getattr(self, 'on_page_count_changed', None)
+            if callable(cb):
+                cb(old_count, new_count)
+        except Exception:
+            pass
         return True
     
-    def switchToWindow_(self, window_id):
+    # Pythonic 别名（不参与 ObjC 选择子转换）
+    def close_window(self, window_id):
+        return self.closeWindow_(window_id)
+
+    # Pythonic：切换窗口（内部转调 ObjC 方法）
+    def switch_to_window(self, window_id):
         """
         切换到指定窗口
         
@@ -225,21 +254,19 @@ class MultiWindowManager(NSObject):
         Returns:
             bool: 切换是否成功
         """
+        return self.switchToWindow_(window_id)
+    
+    # 兼容旧命名（CamelCase）：转调到新方法
+    def switchToWindow_(self, window_id):
+        """ObjC 风格选择子，实现实际切换逻辑。"""
         if window_id not in self.ns_windows:
             return False
-        
-        # 获取目标窗口
         target_window = self.ns_windows[window_id]
-        
-        # 激活窗口
         NSApp.activateIgnoringOtherApps_(True)
         target_window.orderFront_(None)
         target_window.makeKeyAndOrderFront_(None)
-        
-        # 更新活动窗口状态
         self.active_ns_window = target_window
         self.window_manager.set_active_window(window_id)
-        
         print(f"切换到窗口: {window_id}")
         return True
     
@@ -530,7 +557,7 @@ class MultiWindowManager(NSObject):
         if available_windows:
             next_window = available_windows[0]
             window_id = next_window.window_id
-            self.switch_to_window_(window_id)
+            self.switch_to_window(window_id)
         else:
             self.active_ns_window = None
     
@@ -540,7 +567,7 @@ class MultiWindowManager(NSObject):
         """关闭窗口动作"""
         window_id = getattr(sender, 'window_id', None)
         if window_id:
-            self.close_window_(window_id)
+            self.close_window(window_id)
     
     def minimizeWindowAction_(self, sender):
         """最小化窗口动作"""
@@ -629,7 +656,7 @@ class MultiWindowManager(NSObject):
         closed_count = 0
         
         for ai_window in platform_windows:
-            if self.close_window_(ai_window.window_id):
+            if self.close_window(ai_window.window_id):
                 closed_count += 1
         
         return closed_count

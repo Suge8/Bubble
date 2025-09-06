@@ -27,8 +27,18 @@ from AppKit import (
     NSVisualEffectView,
     NSVisualEffectStateActive,
     NSVisualEffectBlendingModeBehindWindow,
+    NSWindow,
 )
 from AppKit import NSWindowAbove
+from AppKit import NSWindowStyleMaskTitled, NSWindowStyleMaskClosable, NSWindowStyleMaskBorderless
+from AppKit import NSBackingStoreBuffered, NSFloatingWindowLevel
+from AppKit import NSEvent, NSEventMaskKeyDown
+from AppKit import (
+    NSEventModifierFlagCommand,
+    NSEventModifierFlagOption,
+    NSEventModifierFlagShift,
+    NSEventModifierFlagControl,
+)
 import objc
 from Quartz import (
     CGEventCreateKeyboardEvent,
@@ -38,11 +48,8 @@ from Quartz import (
     kCGEventKeyDown,
     kCGEventKeyUp,
     kCGKeyboardEventKeycode,
-    NSEvent,
-    NSAlternateKeyMask,
-    NSCommandKeyMask,
-    NSControlKeyMask,
-    NSShiftKeyMask,
+    CGEventTapEnable,
+    CGEventTapIsEnabled,
 )
 
 # Local libraries
@@ -60,6 +67,14 @@ SPECIAL_KEY_NAMES = {
     125: "Down Arrow", 126: "Up Arrow"
 }
 handle_new_trigger = None
+
+
+# A borderless window subclass that can become key/main to host the hotkey UI
+class HotkeyPanelWindow(NSWindow):
+    def canBecomeKeyWindow(self):
+        return True
+    def canBecomeMainWindow(self):
+        return True
 
 class _ActionProxy(objc.lookUpClass('NSObject')):
     def initWithHandler_(self, handler):
@@ -90,129 +105,149 @@ def load_custom_launcher_trigger():
             print(f"[BubbleBot] Failed to load custom trigger: {e}. Using default trigger.", flush=True)
 
 def set_custom_launcher_trigger(app, target_window=None):
-    """Show a polished Vercel-style overlay to set a new global hotkey trigger.
-
-    If target_window is provided, the overlay attaches to that window's content view
-    (e.g., Settings window). Otherwise attaches to the main app window.
-    """
+    """Open a compact modal window to set a new global hotkey trigger (no overlay)."""
     from .i18n import t as _t
-    if target_window is None:
-        app.showWindow_(None)
     try:
-        # Ensure the app is frontmost and target window is key
         NSApp.activateIgnoringOtherApps_(True)
-        if target_window is not None:
-            target_window.makeKeyAndOrderFront_(None)
-    except Exception:
-        pass
-    print("Setting new BubbleBot launch shortcut. (Press keys or click Cancel)", flush=True)
-
-    # Get the content view bounds (fallback to main window if target bounds look invalid)
-    content_view = (target_window.contentView() if target_window is not None else app.window.contentView())
-    content_bounds = content_view.bounds()
-    try:
-        if content_bounds.size.width < 50 or content_bounds.size.height < 50:
-            content_view = app.window.contentView()
-            content_bounds = content_view.bounds()
     except Exception:
         pass
 
-    # Overlay dim layer (black alpha) + optional blur underlay
-    overlay_view = NSView.alloc().initWithFrame_(content_bounds)
-    overlay_view.setWantsLayer_(True)
-    overlay_view.setAlphaValue_(0.0)
-    overlay_view.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.45).CGColor())
+    # If a previous panel exists, close it first to reset state.
     try:
-        overlay_view.setAutoresizingMask_((1 << 1) | (1 << 4))
+        prev = getattr(app, '_hotkey_panel_win', None)
+        if prev is not None:
+            try:
+                prev.orderOut_(None)
+            except Exception:
+                pass
+            setattr(app, '_hotkey_panel_win', None)
     except Exception:
         pass
 
-    # Card (centered)
-    card_w, card_h = 440, 220
-    cx = (content_bounds.size.width - card_w) / 2
-    cy = (content_bounds.size.height - card_h) / 2
-    card_frame = NSMakeRect(cx, cy, card_w, card_h)
-    card = NSView.alloc().initWithFrame_(card_frame)
-    card.setWantsLayer_(True)
-    # Theme-aware colors (black/white Vercel style)
-    is_dark = False
+    # Small borderless floating window that can become key, with custom background.
+    w, h = 420, 160
+    rect = NSMakeRect(0, 0, w, h)
+
+    win = HotkeyPanelWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+        rect,
+        NSWindowStyleMaskBorderless,
+        NSBackingStoreBuffered,
+        False,
+    )
     try:
-        appearance = NSApp.effectiveAppearance()
-        name = appearance.bestMatchFromAppearancesWithNames_(["NSAppearanceNameDarkAqua", "NSAppearanceNameAqua"])
-        is_dark = (name == "NSAppearanceNameDarkAqua")
-    except Exception:
-        pass
-    bg = (NSColor.colorWithCalibratedWhite_alpha_(0.10, 0.96) if is_dark else NSColor.whiteColor())
-    border = (NSColor.whiteColor().colorWithAlphaComponent_(0.08) if is_dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
-    card.layer().setBackgroundColor_(bg.CGColor())
-    card.layer().setCornerRadius_(12.0)
-    card.layer().setBorderWidth_(1.0)
-    card.layer().setBorderColor_(border.CGColor())
-    card.layer().setShadowColor_(NSColor.blackColor().CGColor())
-    card.layer().setShadowOpacity_(0.18)
-    card.layer().setShadowRadius_(10.0)
-    card.layer().setShadowOffset_((0.0, -1.0))
-    card.setAlphaValue_(0.0)
-
-    # Title
-    title = NSTextField.alloc().initWithFrame_(NSMakeRect(20, card_h - 54, card_w - 40, 24))
-    title.setBezeled_(False); title.setDrawsBackground_(False); title.setEditable_(False); title.setSelectable_(False)
-    title.setAlignment_(NSTextAlignmentCenter)
-    title.setFont_(NSFont.boldSystemFontOfSize_(16))
-    title.setStringValue_(_t('hotkey.overlay.title', default='Set Shortcut'))
-
-    # Subtitle
-    subtitle = NSTextField.alloc().initWithFrame_(NSMakeRect(20, card_h - 78, card_w - 40, 20))
-    subtitle.setBezeled_(False); subtitle.setDrawsBackground_(False); subtitle.setEditable_(False); subtitle.setSelectable_(False)
-    subtitle.setAlignment_(NSTextAlignmentCenter)
-    subtitle.setFont_(NSFont.systemFontOfSize_(12))
-    try:
-        subtitle.setTextColor_(NSColor.secondaryLabelColor())
-    except Exception:
-        pass
-    subtitle.setStringValue_(_t('hotkey.overlay.subtitle', default='Press the new shortcut key combination now.'))
-
-    # Trigger display pill
-    pill_w, pill_h = 300, 38
-    pill = NSView.alloc().initWithFrame_(NSMakeRect((card_w - pill_w)/2, card_h - 124, pill_w, pill_h))
-    pill.setWantsLayer_(True)
-    pill_bg = (NSColor.whiteColor().colorWithAlphaComponent_(0.06) if is_dark else NSColor.colorWithCalibratedWhite_alpha_(0.95, 1.0))
-    pill_border = (NSColor.whiteColor().colorWithAlphaComponent_(0.12) if is_dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
-    pill.layer().setBackgroundColor_(pill_bg.CGColor())
-    pill.layer().setCornerRadius_(8.0)
-    pill.layer().setBorderWidth_(1.0)
-    pill.layer().setBorderColor_(pill_border.CGColor())
-
-    display = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 1, pill_w, pill_h))
-    display.setBezeled_(False); display.setDrawsBackground_(False); display.setEditable_(False); display.setSelectable_(False)
-    display.setAlignment_(NSTextAlignmentCenter)
-    display.setFont_(NSFont.systemFontOfSize_(15))
-    display.setStringValue_(_t('hotkey.overlay.wait', default='Waiting for key press…'))
-    pill.addSubview_(display)
-
-    # Cancel button (ghost)
-    cancel = NSButton.alloc().initWithFrame_(NSMakeRect((card_w - 110)/2, 18, 110, 36))
-    cancel.setTitle_(_t('button.cancel'))
-    try:
-        cancel.setWantsLayer_(True)
-        cancel.layer().setCornerRadius_(8.0)
-        cancel.layer().setBackgroundColor_((NSColor.whiteColor().colorWithAlphaComponent_(0.10) if is_dark else NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10)).CGColor())
-        # no border, remove focus ring
+        win.setReleasedWhenClosed_(False)
         try:
-            from AppKit import NSFocusRingTypeNone
-            cancel.setFocusRingType_(NSFocusRingTypeNone)
-            cancel.setBordered_(False)
-            cancel.setFont_(NSFont.systemFontOfSize_(14))
+            win.setLevel_(NSFloatingWindowLevel + 1)
+        except Exception:
+            pass
+        try:
+            win.setMovableByWindowBackground_(True)
+        except Exception:
+            pass
+        try:
+            win.setOpaque_(False)
+            from AppKit import NSColor
+            win.setBackgroundColor_(NSColor.clearColor())
+            win.setHasShadow_(True)
         except Exception:
             pass
     except Exception:
         pass
 
-    def cancel_action(sender):
+    # Custom dark rounded content background
+    content = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))
+    content.setWantsLayer_(True)
+    try:
+        content.layer().setCornerRadius_(12.0)
+        content.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.9).CGColor())
+    except Exception:
+        pass
+    win.setContentView_(content)
+    try:
+        setattr(app, '_hotkey_panel_win', win)
+    except Exception:
+        pass
+
+    # Title
+    title = NSTextField.alloc().initWithFrame_(NSMakeRect(20, h - 50, w - 40, 22))
+    title.setBezeled_(False); title.setDrawsBackground_(False); title.setEditable_(False); title.setSelectable_(False)
+    title.setAlignment_(NSTextAlignmentCenter)
+    title.setFont_(NSFont.boldSystemFontOfSize_(15))
+    try:
+        title.setTextColor_(NSColor.whiteColor())
+    except Exception:
+        pass
+    title.setStringValue_(_t('hotkey.overlay.title', default='Set Shortcut'))
+
+    # Subtitle
+    subtitle = NSTextField.alloc().initWithFrame_(NSMakeRect(20, h - 72, w - 40, 18))
+    subtitle.setBezeled_(False); subtitle.setDrawsBackground_(False); subtitle.setEditable_(False); subtitle.setSelectable_(False)
+    subtitle.setAlignment_(NSTextAlignmentCenter)
+    subtitle.setFont_(NSFont.systemFontOfSize_(12))
+    try:
+        subtitle.setTextColor_(NSColor.whiteColor().colorWithAlphaComponent_(0.8))
+    except Exception:
+        pass
+    subtitle.setStringValue_(_t('hotkey.overlay.subtitle', default='Press a key combo (include at least one modifier).'))
+
+    # Display
+    display = NSTextField.alloc().initWithFrame_(NSMakeRect(20, h - 100, w - 40, 24))
+    display.setBezeled_(False); display.setDrawsBackground_(False); display.setEditable_(False); display.setSelectable_(False)
+    display.setAlignment_(NSTextAlignmentCenter)
+    display.setFont_(NSFont.systemFontOfSize_(14))
+    try:
+        display.setTextColor_(NSColor.whiteColor())
+    except Exception:
+        pass
+    display.setStringValue_(_t('hotkey.overlay.wait', default='Waiting for key press…'))
+
+    # Cancel
+    cancel = NSButton.alloc().initWithFrame_(NSMakeRect((w - 100)/2, 12, 100, 30))
+    cancel.setTitle_(_t('button.cancel'))
+
+    content.addSubview_(title); content.addSubview_(subtitle); content.addSubview_(display); content.addSubview_(cancel)
+
+    # Temporarily disable global event tap to avoid interference
+    tap_was_enabled = False
+    try:
+        if hasattr(app, 'eventTap') and app.eventTap:
+            tap_was_enabled = bool(CGEventTapIsEnabled(app.eventTap))
+            CGEventTapEnable(app.eventTap, False)
+    except Exception:
+        pass
+
+    # Show window
+    try:
+        win.center(); win.makeKeyAndOrderFront_(None)
+        NSApp.activateIgnoringOtherApps_(True)
+    except Exception:
+        pass
+
+    # Preserve and disable current trigger
+    prev_flags, prev_key = LAUNCHER_TRIGGER.get("flags"), LAUNCHER_TRIGGER.get("key")
+    LAUNCHER_TRIGGER["flags"], LAUNCHER_TRIGGER["key"] = None, None
+    print("DEBUG: Hotkey window shown", flush=True)
+
+    def close_panel():
+        try:
+            win.orderOut_(None)
+            # Re-enable global tap
+            try:
+                if hasattr(app, 'eventTap') and app.eventTap:
+                    CGEventTapEnable(app.eventTap, tap_was_enabled)
+            except Exception:
+                pass
+            try:
+                setattr(app, '_hotkey_panel_win', None)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def cancel_action(_):
         print("Cancelled custom shortcut selection.", flush=True)
-        # Restore previous trigger
         LAUNCHER_TRIGGER["flags"], LAUNCHER_TRIGGER["key"] = prev_flags, prev_key
-        overlay_view.removeFromSuperview()
+        close_panel()
         global handle_new_trigger
         handle_new_trigger = None
         try:
@@ -222,43 +257,9 @@ def set_custom_launcher_trigger(app, target_window=None):
     proxy = _ActionProxy.alloc().initWithHandler_(cancel_action)
     cancel.setTarget_(proxy)
     cancel.setAction_("callWithSender:")
-    # Keep proxy alive via attribute on overlay
-    setattr(overlay_view, '_cancel_proxy', proxy)
+    setattr(win, '_cancel_proxy', proxy)
 
-    # Assemble
-    card.addSubview_(title); card.addSubview_(subtitle); card.addSubview_(pill); card.addSubview_(cancel)
-    overlay_view.addSubview_(card)
-    try:
-        content_view.addSubview_positioned_relativeTo_(overlay_view, NSWindowAbove, None)
-    except Exception:
-        content_view.addSubview_(overlay_view)
-    try:
-        if target_window is not None:
-            target_window.makeKeyAndOrderFront_(None)
-    except Exception:
-        pass
-
-    # Preserve previous trigger and temporarily disable current one only
-    # after overlay has been added (avoid losing shortcut if overlay fails)
-    prev_flags, prev_key = LAUNCHER_TRIGGER.get("flags"), LAUNCHER_TRIGGER.get("key")
-    LAUNCHER_TRIGGER["flags"], LAUNCHER_TRIGGER["key"] = None, None
-
-    # Animate overlay + card
-    try:
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.currentContext().setDuration_(0.18)
-        overlay_view.animator().setAlphaValue_(1.0)
-        card.animator().setAlphaValue_(1.0)
-        # slight rise
-        cf = card.frame()
-        card.animator().setFrameOrigin_((cf.origin.x, cf.origin.y + 6))
-        NSAnimationContext.endGrouping()
-    except Exception:
-        overlay_view.setAlphaValue_(1.0)
-        card.setAlphaValue_(1.0)
-    print("DEBUG: Hotkey overlay shown", flush=True)
-
-    # Handler for new trigger
+    # Handler (uses global event tap to capture CGEvent)
     def custom_handle_new_trigger(event, flags, keycode):
         launcher_trigger = {"flags": flags, "key": keycode}
         with open(TRIGGER_FILE, "w") as f:
@@ -272,13 +273,7 @@ def set_custom_launcher_trigger(app, target_window=None):
             display.setStringValue_(trigger_str)
         except Exception:
             pass
-        # Fade out overlay after short delay
-        try:
-            from Foundation import NSTimer
-            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(1.0, overlay_view, 'removeFromSuperview', None, False)
-        except Exception:
-            overlay_view.removeFromSuperview()
-        # Immediately refresh menu + settings UI
+        close_panel()
         try:
             if hasattr(app, '_refresh_status_menu_titles'):
                 app._refresh_status_menu_titles()
@@ -291,23 +286,103 @@ def set_custom_launcher_trigger(app, target_window=None):
             pass
         global handle_new_trigger
         handle_new_trigger = None
-        app.showWindow_(None)
+        try:
+            app.showWindow_(None)
+        except Exception:
+            pass
         return None
 
-    # Set the global handler
     global handle_new_trigger
     handle_new_trigger = custom_handle_new_trigger
+
+    # Local fallback: if global event tap isn't delivering events (no accessibility
+    # permission, or tap disabled), capture the next key press from this modal
+    # window using a local monitor. This does not require Accessibility permissions.
+    try:
+        def _local_monitor(ev):
+            try:
+                # Key down only; gather flags and keycode
+                flags = int(ev.modifierFlags())
+                keycode = int(ev.keyCode())
+                # Build a synthetic CGEvent for display string best-effort
+                # If unavailable, pass through None; get_trigger_string handles it.
+                cg_event = None
+                try:
+                    from Quartz import CGEventCreateKeyboardEvent
+                    cg_event = CGEventCreateKeyboardEvent(None, keycode, True)
+                except Exception:
+                    cg_event = None
+
+                # Only accept combinations that include at least one modifier to
+                # avoid accidental single-key triggers.
+                modifier_mask = (
+                    int(NSEventModifierFlagOption)
+                    | int(NSEventModifierFlagCommand)
+                    | int(NSEventModifierFlagControl)
+                    | int(NSEventModifierFlagShift)
+                )
+                has_modifier = bool(flags & modifier_mask)
+                # ESC cancels
+                if handle_new_trigger and keycode == 53:  # Escape
+                    try:
+                        cancel_action(None)
+                    except Exception:
+                        pass
+                    # Swallow event to avoid beep
+                    return None
+                if has_modifier and handle_new_trigger:
+                    # Persist only recognized modifier bits to keep trigger matching stable
+                    cleaned_flags = flags & modifier_mask
+                    # Invoke the same handler used by the global tap
+                    custom_handle_new_trigger(cg_event, cleaned_flags, keycode)
+                    # Swallow the event to avoid system beep
+                    return None
+                else:
+                    try:
+                        # Prompt requirement to the user
+                        from .i18n import t as _t
+                        display.setStringValue_(_t('hotkey.overlay.requireModifier', default='Please include at least one modifier (⌘/⌥/⌃/⇧)'))
+                    except Exception:
+                        pass
+                # If no modifier, still swallow to avoid beep – user can try again
+                return None
+            except Exception:
+                # On any error, allow event to pass through (but still try to suppress beep)
+                return None
+
+        monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            NSEventMaskKeyDown, _local_monitor
+        )
+        # Keep a strong reference so PyObjC doesn't autorelease it
+        setattr(win, '_local_key_monitor', monitor)
+
+        # Ensure monitor is removed when the panel closes
+        _orig_close = close_panel
+
+        def _wrapped_close():
+            try:
+                if hasattr(win, '_local_key_monitor') and getattr(win, '_local_key_monitor') is not None:
+                    NSEvent.removeMonitor_(getattr(win, '_local_key_monitor'))
+                    setattr(win, '_local_key_monitor', None)
+            except Exception:
+                pass
+            _orig_close()
+
+        # Rebind close_panel to wrapped version
+        close_panel = _wrapped_close  # type: ignore
+    except Exception:
+        pass
 
 def get_modifier_names(flags):
     """Helper to get modifier names as list."""
     modifier_names = []
-    if flags & NSShiftKeyMask:
+    if flags & int(NSEventModifierFlagShift):
         modifier_names.append("Shift")
-    if flags & NSControlKeyMask:
+    if flags & int(NSEventModifierFlagControl):
         modifier_names.append("Control")
-    if flags & NSAlternateKeyMask:
+    if flags & int(NSEventModifierFlagOption):
         modifier_names.append("Option")
-    if flags & NSCommandKeyMask:
+    if flags & int(NSEventModifierFlagCommand):
         modifier_names.append("Command")
     return modifier_names
 

@@ -185,8 +185,9 @@ class WindowManager:
     """
     windows: Dict[str, AIWindow] = field(default_factory=dict)
     active_window_id: Optional[str] = None
-    max_windows_per_platform: int = 5
-    max_total_windows: int = 5
+    # None 表示不限制数量；保持向后兼容，默认不限制
+    max_windows_per_platform: Optional[int] = None
+    max_total_windows: Optional[int] = None
     
     def create_window(self, platform_id: str, window_type: WindowType = WindowType.MAIN, 
                      geometry: Optional[WindowGeometry] = None) -> Optional[AIWindow]:
@@ -201,11 +202,11 @@ class WindowManager:
         Returns:
             Optional[AIWindow]: 创建的窗口实例，如果失败返回None
         """
-        # 检查总窗口与平台窗口数量限制
-        if len(self.windows) >= self.max_total_windows:
+        # 检查总窗口与平台窗口数量限制（None 表示不限制）
+        if isinstance(self.max_total_windows, int) and len(self.windows) >= self.max_total_windows:
             return None
         platform_windows = self.get_platform_windows(platform_id)
-        if len(platform_windows) >= self.max_windows_per_platform:
+        if isinstance(self.max_windows_per_platform, int) and len(platform_windows) >= self.max_windows_per_platform:
             return None
         
         # 创建新窗口
@@ -306,10 +307,12 @@ class WindowManager:
         return len(self.get_platform_windows(platform_id))
     
     def can_create_window(self, platform_id: str) -> bool:
-        """检查是否可以为指定平台创建新窗口"""
-        if len(self.windows) >= self.max_total_windows:
+        """检查是否可以为指定平台创建新窗口（默认不限制）。"""
+        if isinstance(self.max_total_windows, int) and len(self.windows) >= self.max_total_windows:
             return False
-        return self.get_platform_window_count(platform_id) < self.max_windows_per_platform
+        if isinstance(self.max_windows_per_platform, int) and self.get_platform_window_count(platform_id) >= self.max_windows_per_platform:
+            return False
+        return True
     
     def to_dict(self) -> Dict:
         """转换为字典格式"""

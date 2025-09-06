@@ -360,6 +360,7 @@ class AppDelegate(NSObject):
         self.skeleton_view = None
         self.memory_bubble_view = None
         self._memory_bubble_dismissed = False
+        self._page_count_last = 0
         # 错误覆盖层（导航失败提示）
         self.error_overlay = None
         self._error_label = None
@@ -427,100 +428,29 @@ class AppDelegate(NSObject):
         except Exception:
             return default_text
 
-    # -------- Memory bubble (window count > 5) --------
-    def _ensure_memory_bubble(self):
-        if getattr(self, 'memory_bubble_view', None) is not None:
-            return
+    # -------- Toast（页面阈值） --------
+    def show_toast(self, text: str, duration: float = 3.0):
+        """在顶栏区域显示轻量 Toast，自动消失。"""
         try:
-            # Container
-            self.memory_bubble_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 250, 24))
-            self.memory_bubble_view.setWantsLayer_(True)
-            self.memory_bubble_view.layer().setCornerRadius_(12)
-            self.memory_bubble_view.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.92).CGColor())
-            self.memory_bubble_view.layer().setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0).CGColor())
-            self.memory_bubble_view.layer().setBorderWidth_(1.0)
-            # Label
-            label = NSTextField.alloc().initWithFrame_(NSMakeRect(10, 3, 170, 18))
-            label.setBezeled_(False)
-            label.setDrawsBackground_(False)
-            label.setEditable_(False)
-            label.setSelectable_(False)
-            label.setFont_(NSFont.systemFontOfSize_(11))
-            label.setStringValue_(self._i18n_or_default('bubble.tooManyWindows', 'Too many windows may use memory'))
-            self.memory_bubble_view.addSubview_(label)
-            # Dismiss button (×)
-            dismiss = NSButton.alloc().initWithFrame_(NSMakeRect(185, 2, 20, 20))
-            dismiss.setBordered_(False)
-            dismiss.setTitle_("×")
-            dismiss.setTarget_(self)
-            dismiss.setAction_("callWithSender:")
-            self.memory_bubble_view.addSubview_(dismiss)
-            # Never show again button
-            never = NSButton.alloc().initWithFrame_(NSMakeRect(205, 2, 40, 20))
-            never.setBordered_(False)
-            never.setTitle_(self._i18n_or_default('bubble.neverShow', 'Never'))
-            never.setTarget_(self)
-            never.setAction_("callWithSenderNever:")
-            self.memory_bubble_view.addSubview_(never)
-            # Position at top-right inside top_bar
-            tb = self.top_bar
-            bx = tb.frame().size.width - 260
-            by = (self.top_bar_height - 24) / 2
-            self.memory_bubble_view.setFrameOrigin_(NSMakePoint(bx, by))
-            tb.addSubview_(self.memory_bubble_view)
-            self.memory_bubble_view.setHidden_(True)
-        except Exception:
-            self.memory_bubble_view = None
-
-    def _update_memory_bubble_visibility(self):
-        try:
-            if not getattr(self, 'memory_bubble_view', None):
+            from .components.utils.toast_manager import ToastManager
+            parent = self.top_bar if getattr(self, 'top_bar', None) is not None else (self.window.contentView() if self.window else None)
+            if parent is None:
                 return
-            if self._memory_bubble_dismissed:
-                self.memory_bubble_view.setHidden_(True)
-                return
-            hide_pref = False
-            try:
-                if self.homepage_manager:
-                    hide_pref = bool(self.homepage_manager.user_config.get('ui_preferences', {}).get('hide_memory_bubble', False))
-            except Exception:
-                hide_pref = False
-            count = 0
-            try:
-                if self.homepage_manager:
-                    count = int(self.homepage_manager.get_total_window_count())
-            except Exception:
-                count = 0
-            show = (count > 5) and (not hide_pref)
-            self.memory_bubble_view.setHidden_(not show)
-            if show:
-                # Ensure rightmost placement in case of resize
-                tb = self.top_bar
-                bx = tb.frame().size.width - 260
-                by = (self.top_bar_height - 24) / 2
-                self.memory_bubble_view.setFrameOrigin_(NSMakePoint(bx, by))
+            ToastManager.show(text=text, parent=parent, duration=duration)
+        except Exception as e:
+            print(f"WARNING: show_toast 失败: {e}")
+
+    def _maybe_show_page_threshold_toast(self, old: int, new: int):
+        try:
+            if old < 5 and new == 5:
+                msg = self._i18n_or_default('toast.tooManyPages', '页面较多可能占用内存导致卡顿')
+                self.show_toast(msg, duration=3.0)
         except Exception:
             pass
 
-    # ObjC-style action handlers for bubble
-    def callWithSender_(self, sender):
-        try:
-            self._memory_bubble_dismissed = True
-            if getattr(self, 'memory_bubble_view', None):
-                self.memory_bubble_view.setHidden_(True)
-        except Exception:
-            pass
-
-    def callWithSenderNever_(self, sender):
-        try:
-            if self.homepage_manager and getattr(self.homepage_manager, 'user_config', None) is not None:
-                prefs = self.homepage_manager.user_config.setdefault('ui_preferences', {})
-                prefs['hide_memory_bubble'] = True
-                if hasattr(self.homepage_manager, '_save_user_config'):
-                    self.homepage_manager._save_user_config()
-        except Exception:
-            pass
-        self.callWithSender_(sender)
+    def notify_page_count_changed(self, old: int, new: int):
+        """供多窗口管理器回调：页面计数变化时的处理。"""
+        self._maybe_show_page_threshold_toast(old, new)
 
     # -------- One-time notice bubble (e.g., config migration) --------
     def _ensure_notice_bubble(self):
@@ -604,6 +534,12 @@ class AppDelegate(NSObject):
     def setMultiwindowManager_(self, manager):
         """设置多窗口管理器"""
         self.multiwindow_manager = manager
+        try:
+            # 注册页面计数变化回调，用于阈值 Toast
+            if hasattr(self.multiwindow_manager, 'on_page_count_changed'):
+                self.multiwindow_manager.on_page_count_changed = self.notify_page_count_changed
+        except Exception:
+            pass
         # 当设置多窗口管理器时，更新AI选择器（只有在已初始化的情况下）
         if hasattr(self, 'ai_selector') and self.ai_selector:
             self._populate_ai_selector()
@@ -642,7 +578,7 @@ class AppDelegate(NSObject):
         """处理窗口拖拽事件（由DragArea调用）"""
         if self.is_multiwindow_mode and self.multiwindow_manager:
             # 多窗口模式：切换到指定窗口并执行拖拽
-            self.multiwindow_manager.switch_to_window_(window_id)
+            self.multiwindow_manager.switch_to_window(window_id)
 
         # 执行窗口拖拽
         window = event.window()
@@ -686,6 +622,22 @@ class AppDelegate(NSObject):
             os._exit(0)
         
         threading.Thread(target=force_exit, daemon=True).start()
+
+        # 清理外观观察者，防止退出阶段 KVO/通知触发崩溃
+        try:
+            if getattr(self, 'status_item', None) is not None:
+                btn = self.status_item.button()
+                if btn is not None:
+                    try:
+                        btn.removeObserver_forKeyPath_(self, "effectiveAppearance")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            NSNotificationCenter.defaultCenter().removeObserver_(self)
+        except Exception:
+            pass
     
     def checkExitStatus_(self, timer):
         """定期检查是否需要退出"""
@@ -1219,11 +1171,7 @@ class AppDelegate(NSObject):
             pass
         self.top_bar.addSubview_(self.ai_selector)
         
-        # 内存提示气泡（当窗口数量>5时显示，支持关闭/不再提示）
-        try:
-            self._ensure_memory_bubble()
-        except Exception:
-            pass
+        # 旧版“内存提示气泡”已移除，改为阈值 Toast（4→5 时提示一次）
         # 显示一次性迁移提示（如需要）
         try:
             self._show_migration_notice_if_pending()
@@ -1279,10 +1227,7 @@ class AppDelegate(NSObject):
                 load_home = True
         # 填充平台项（主页时首项为“主页”）
         self._populate_ai_selector(include_home_first=load_home)
-        try:
-            self._update_memory_bubble_visibility()
-        except Exception:
-            pass
+        # 旧版“内存提示气泡”已移除
 
         # WebView 全高（顶栏悬浮覆盖，不挤压内容）
         webview_frame = NSMakeRect(
@@ -1348,11 +1293,7 @@ class AppDelegate(NSObject):
                 self._select_ai_item(startup_platform)
             except Exception as _e:
                 print(f"DEBUG: 启动平台加载异常: {_e}")
-        # 初始刷新内存提示
-        try:
-            self._update_memory_bubble_visibility()
-        except Exception:
-            pass
+        # 旧版“内存提示气泡”已移除
         # Inject JavaScript to monitor background color changes
         script = """
             function sendBackgroundColor() {
@@ -1447,11 +1388,30 @@ class AppDelegate(NSObject):
         except Exception:
             pass
         # Set the initial logo image based on the current appearance
-        self.updateStatusItemImage()
-        # Observe system appearance changes
-        self.status_item.button().addObserver_forKeyPath_options_context_(
-            self, "effectiveAppearance", NSKeyValueObservingOptionNew, STATUS_ITEM_CONTEXT
-        )
+        try:
+            self.updateStatusItemImage()
+        except Exception:
+            pass
+        # Observe system appearance changes (KVO on status item button)
+        try:
+            btn = self.status_item.button()
+            if btn is not None:
+                btn.addObserver_forKeyPath_options_context_(
+                    self, "effectiveAppearance", NSKeyValueObservingOptionNew, STATUS_ITEM_CONTEXT
+                )
+        except Exception:
+            pass
+        # Also observe application-level appearance changes as a fallback
+        try:
+            try:
+                from AppKit import NSApplicationDidChangeEffectiveAppearanceNotification as _APP_APPEARANCE_CHANGED
+            except Exception:
+                _APP_APPEARANCE_CHANGED = "NSApplicationDidChangeEffectiveAppearanceNotification"
+            NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+                self, 'appearanceDidChange:', _APP_APPEARANCE_CHANGED, None
+            )
+        except Exception:
+            pass
         # Create simplified status bar menu (hint + Settings… + Quit)
         menu = NSMenu.alloc().init()
         menu.setDelegate_(self)
@@ -1700,6 +1660,17 @@ class AppDelegate(NSObject):
         if self.eventTap:
             CGEventTapEnable(self.eventTap, True)
         # 如页面存在可聚焦区域，可在需要时聚焦
+        # Debug helper: show hotkey window automatically for tests
+        try:
+            import os as _os
+            if _os.environ.get('BB_DEBUG_HOTKEY') == '1' and not getattr(self, '_debug_hotkey_shown', False):
+                self._debug_hotkey_shown = True
+                from Foundation import NSTimer
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    0.6, self, 'setTrigger:', None, False
+                )
+        except Exception:
+            pass
 
     # Hide the overlay and allow focus to return to the next visible application.
     def hideWindow_(self, sender):
@@ -1866,12 +1837,18 @@ class AppDelegate(NSObject):
                             # 无实例则创建
                             from uuid import uuid4
                             if self.homepage_manager.can_add_window():
+                                old_cnt = 0
+                                try:
+                                    old_cnt = int(self.homepage_manager.get_total_window_count())
+                                except Exception:
+                                    old_cnt = 0
                                 new_id = str(uuid4())
                                 self.homepage_manager.add_platform_window(platform_id, new_id, { 'createdAt': str(NSDate.date()) })
                                 try:
-                                    self._update_memory_bubble_visibility()
+                                    new_cnt = int(self.homepage_manager.get_total_window_count())
                                 except Exception:
-                                    pass
+                                    new_cnt = old_cnt
+                                self._maybe_show_page_threshold_toast(old_cnt, new_cnt)
                                 target_window_id = new_id
                     except Exception:
                         pass
@@ -1921,7 +1898,13 @@ class AppDelegate(NSObject):
                         except Exception:
                             pass
                         try:
-                            self._update_memory_bubble_visibility()
+                            old_cnt = 0
+                            new_cnt = 0
+                            # 4→5 跃迁提示一次
+                            old_cnt = max(0, self._page_count_last)
+                            new_cnt = int(self.homepage_manager.get_total_window_count())
+                            self._maybe_show_page_threshold_toast(old_cnt, new_cnt)
+                            self._page_count_last = new_cnt
                         except Exception:
                             pass
                     return
@@ -1933,7 +1916,8 @@ class AppDelegate(NSObject):
                             self._refresh_homepage()
                             self._populate_ai_selector()
                             try:
-                                self._update_memory_bubble_visibility()
+                                # 移除不触发提示，仅更新 last 计数供后续参考
+                                self._page_count_last = max(0, int(self.homepage_manager.get_total_window_count()))
                             except Exception:
                                 pass
                     return
@@ -1962,23 +1946,88 @@ class AppDelegate(NSObject):
 
     # Logic for checking what color the logo in the status bar should be, and setting appropriate logo.
     def updateStatusItemImage(self):
-        appearance = self.status_item.button().effectiveAppearance()
-        dark = appearance.bestMatchFromAppearancesWithNames_([NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) == NSAppearanceNameDarkAqua
-        # Use prebuilt transparent status icons (only the central bubble)
-        img = self.logo_white if dark else self.logo_black
+        try:
+            dark = self._is_dark_appearance()
+        except Exception:
+            dark = False
+        # Choose the best-available image for current appearance with fallback
+        img = None
+        try:
+            img = self.logo_white if dark else self.logo_black
+            if img is None:
+                img = self.logo_black if self.logo_black is not None else self.logo_white
+        except Exception:
+            img = None
         if img is None:
             print("WARNING: status bar icon missing for appearance", "dark" if dark else "light")
             return
         try:
-            self.status_item.button().setWantsLayer_(True)
+            btn = self.status_item.button() if getattr(self, 'status_item', None) is not None else None
+            if btn is not None:
+                try:
+                    btn.setWantsLayer_(True)
+                except Exception:
+                    pass
+                btn.setImage_(img)
+        except Exception as _e:
+            print(f"WARNING: failed to set status bar image: {_e}")
+
+    def _is_dark_appearance(self) -> bool:
+        """Robust dark-mode detection.
+        Order: status button effectiveAppearance -> NSApp.effectiveAppearance -> name contains 'Dark' -> AppleInterfaceStyle fallback.
+        """
+        appearance = None
+        # Preferred: status item button effective appearance
+        try:
+            if getattr(self, 'status_item', None) is not None:
+                btn = self.status_item.button()
+                if btn is not None and hasattr(btn, 'effectiveAppearance'):
+                    appearance = btn.effectiveAppearance()
+        except Exception:
+            appearance = None
+        # Fallback: application appearance
+        if appearance is None:
+            try:
+                appearance = NSApp.effectiveAppearance()
+            except Exception:
+                appearance = None
+        # Try bestMatch API when available
+        if appearance is not None:
+            try:
+                try:
+                    names = [NSAppearanceNameAqua, NSAppearanceNameDarkAqua]
+                except Exception:
+                    names = ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]
+                name = appearance.bestMatchFromAppearancesWithNames_(names)
+                if name:
+                    s = str(name)
+                    return s.endswith("DarkAqua") or ('Dark' in s)
+            except Exception:
+                pass
+            # Fallback: direct name()
+            try:
+                nm = appearance.name()
+                if nm:
+                    s = str(nm)
+                    return ('Dark' in s) or ('dark' in s)
+            except Exception:
+                pass
+        # Legacy fallback: AppleInterfaceStyle == 'Dark'
+        try:
+            from Foundation import NSUserDefaults
+            val = NSUserDefaults.standardUserDefaults().stringForKey_("AppleInterfaceStyle")
+            return str(val) == 'Dark'
         except Exception:
             pass
-        self.status_item.button().setImage_(img)
+        return False
 
     # Observer that is triggered whenever the color of the status bar logo might need to be updated.
     def observeValueForKeyPath_ofObject_change_context_(self, keyPath, object, change, context):
         if context == STATUS_ITEM_CONTEXT and keyPath == "effectiveAppearance":
-            self.updateStatusItemImage()
+            try:
+                self.updateStatusItemImage()
+            except Exception:
+                pass
 
     # 返回按钮点击
     def navigateBack_(self, sender):
@@ -2027,7 +2076,10 @@ class AppDelegate(NSObject):
     # System triggered appearance changes that might affect logo color.
     def appearanceDidChange_(self, notification):
         # Update the logo image when the system appearance changes
-        self.updateStatusItemImage()
+        try:
+            self.updateStatusItemImage()
+        except Exception:
+            pass
     # Handler to switch AI service based on dropdown selection
     def aiServiceChanged_(self, sender):
         if getattr(self, '_suppress_ai_action', False):
@@ -2047,7 +2099,7 @@ class AppDelegate(NSObject):
                 platform_windows = self.multiwindow_manager.get_platform_windows(platform_id)
                 if platform_windows:
                     window_id = list(platform_windows.keys())[0]
-                    self.multiwindow_manager.switch_to_window_(window_id)
+                    self.multiwindow_manager.switch_to_window(window_id)
                 else:
                     self.multiwindow_manager.createWindowForPlatform_(platform_id)
         else:

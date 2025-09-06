@@ -21,10 +21,12 @@ from AppKit import (
     NSWindowStyleMaskClosable,
     NSWindowStyleMaskMiniaturizable,
     NSWindowStyleMaskResizable,
+    NSWindowStyleMaskBorderless,
     NSBackingStoreBuffered,
     NSView,
     NSMakeRect,
     NSTextField,
+    NSTextAlignmentCenter,
     NSButton,
     NSSwitchButton,
     NSPopUpButton,
@@ -33,6 +35,7 @@ from AppKit import (
     NSImage,
     NSImageView,
     NSBezelStyleRounded,
+    NSCursor,
     NSAnimationContext,
     NSVisualEffectView,
     NSVisualEffectBlendingModeBehindWindow,
@@ -62,7 +65,7 @@ class VercelButton(NSButton):
             return None
         try:
             self.setWantsLayer_(True)
-            self.layer().setCornerRadius_(8.0)
+            self.layer().setCornerRadius_(10.0)
             self.layer().setMasksToBounds_(True)
             # Base ghost style (subtle surface, no border)
             self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08)
@@ -82,6 +85,17 @@ class VercelButton(NSButton):
         self._tracking_area = None
         self._is_primary = False
         return self
+
+    def resetCursorRects(self):
+        try:
+            self.discardCursorRects()
+            self.addCursorRect_cursor_(self.bounds(), NSCursor.pointingHandCursor())
+        except Exception:
+            pass
+        try:
+            objc.super(VercelButton, self).resetCursorRects()
+        except Exception:
+            pass
 
     def _apply_title_color(self, color):
         try:
@@ -197,18 +211,14 @@ class CardView(NSView):
             return None
         try:
             self.setWantsLayer_(True)
-            self.layer().setCornerRadius_(12.0)
-            self.layer().setMasksToBounds_(False)
+            self.layer().setCornerRadius_(20.0)
+            # Mask subviews to achieve true rounded window look on transparent window
+            self.layer().setMasksToBounds_(True)
             # Adaptive background
             bg = NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.75)
             self.layer().setBackgroundColor_(bg.CGColor())
-            # Border
-            try:
-                border = NSColor.separatorColor().colorWithAlphaComponent_(0.35)
-            except Exception:
-                border = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.20)
-            self.layer().setBorderWidth_(1.0)
-            self.layer().setBorderColor_(border.CGColor())
+            # Remove border for a cleaner card look
+            self.layer().setBorderWidth_(0.0)
             # Soft shadow
             self.layer().setShadowColor_(NSColor.blackColor().CGColor())
             self.layer().setShadowOpacity_(0.18)
@@ -217,6 +227,30 @@ class CardView(NSView):
         except Exception:
             pass
         return self
+
+class BBPointerPopUpButton(NSPopUpButton):
+    def resetCursorRects(self):
+        try:
+            self.discardCursorRects()
+            self.addCursorRect_cursor_(self.bounds(), NSCursor.pointingHandCursor())
+        except Exception:
+            pass
+        try:
+            objc.super(BBPointerPopUpButton, self).resetCursorRects()
+        except Exception:
+            pass
+
+class BBPointerCheckbox(NSButton):
+    def resetCursorRects(self):
+        try:
+            self.discardCursorRects()
+            self.addCursorRect_cursor_(self.bounds(), NSCursor.pointingHandCursor())
+        except Exception:
+            pass
+        try:
+            objc.super(BBPointerCheckbox, self).resetCursorRects()
+        except Exception:
+            pass
 
 class SettingsWindow(NSObject):
     def initWithAppDelegate_(self, app_delegate):
@@ -241,22 +275,22 @@ class SettingsWindow(NSObject):
         return self
 
     def _create_window(self):
-        rect = NSMakeRect(0, 0, 460, 300)
-        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            rect,
-            NSWindowStyleMaskTitled
-            | NSWindowStyleMaskClosable
-            | NSWindowStyleMaskMiniaturizable
-            | NSWindowStyleMaskResizable,
-            NSBackingStoreBuffered,
-            False,
+        # Borderless settings panel window with large rounded corners
+        rect = NSMakeRect(0, 0, 460, 320)
+        class SettingsPanelWindow(NSWindow):
+            def canBecomeKeyWindow(self):
+                return True
+            def canBecomeMainWindow(self):
+                return True
+        self.window = SettingsPanelWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            rect, NSWindowStyleMaskBorderless, NSBackingStoreBuffered, False
         )
-        self.window.setTitle_(_t('settings.title'))
         self.window.setReleasedWhenClosed_(False)
         try:
-            # Polished look: translucent titlebar and better blending
-            self.window.setTitleVisibility_(1)  # NSWindowTitleHidden
-            self.window.setTitlebarAppearsTransparent_(True)
+            self.window.setHasShadow_(True)
+            self.window.setOpaque_(False)
+            self.window.setBackgroundColor_(NSColor.clearColor())
+            self.window.setMovableByWindowBackground_(True)
         except Exception:
             pass
         self._build_ui()
@@ -284,8 +318,8 @@ class SettingsWindow(NSObject):
         except Exception:
             self.bg_blur = None
 
-        # Card container
-        margin = 16
+        # Card container (fill window to realize large rounded corners)
+        margin = 0
         card_frame = NSMakeRect(margin, margin, bounds.size.width - margin * 2, bounds.size.height - margin * 2)
         self.card = CardView.alloc().initWithFrame_(card_frame)
         try:
@@ -293,6 +327,21 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
         content.addSubview_(self.card)
+        # If a blur background was created earlier, move it inside the card so
+        # the large rounded corners mask it correctly.
+        try:
+            if self.bg_blur is not None:
+                try:
+                    self.bg_blur.removeFromSuperview()
+                except Exception:
+                    pass
+                self.bg_blur.setFrame_(self.card.bounds())
+                # autoresize with card
+                self.bg_blur.setAutoresizingMask_((1 << 1) | (1 << 4))
+                # Add behind other card content
+                self.card.addSubview_(self.bg_blur)
+        except Exception:
+            pass
         # Apply black/white theme to card and controls
         self._apply_theme()
 
@@ -304,9 +353,9 @@ class SettingsWindow(NSObject):
             lbl.setSelectable_(False)
             lbl.setStringValue_(text)
             if bold:
-                lbl.setFont_(NSFont.boldSystemFontOfSize_(13))
+                lbl.setFont_(NSFont.boldSystemFontOfSize_(18))
             else:
-                lbl.setFont_(NSFont.systemFontOfSize_(13))
+                lbl.setFont_(NSFont.systemFontOfSize_(16))
             try:
                 lbl.setTextColor_(NSColor.labelColor())
             except Exception:
@@ -328,7 +377,7 @@ class SettingsWindow(NSObject):
                 try:
                     btn.setFocusRingType_(NSFocusRingTypeNone)
                     btn.setBordered_(False)
-                    btn.setFont_(NSFont.systemFontOfSize_(14))
+                    btn.setFont_(NSFont.systemFontOfSize_(16))
                 except Exception:
                     pass
             except Exception:
@@ -348,39 +397,69 @@ class SettingsWindow(NSObject):
                 iv.setImageScaling_(1)  # NSImageScaleProportionallyUpOrDown
             except Exception:
                 pass
+            try:
+                iv.setWantsLayer_(True)
+                iv.layer().setMasksToBounds_(True)
+                iv.layer().setCornerRadius_(4.0)
+            except Exception:
+                pass
             iv.setImage_(img)
             self.card.addSubview_(iv)
             return iv
 
-        # Header with logo + title
+        # Header: centered logo only (no title)
         logo_img = self._load_logo_for_appearance()
         card_bounds = self.card.bounds()
+        logo_size = 40
+        top_margin = 16
         if logo_img is not None:
-            self.header_logo_view = add_image_view(logo_img, 16, card_bounds.size.height - 40, 20, 20)
-        self.header_title_label = add_label(_t('settings.title'), 44, card_bounds.size.height - 38, 260, 22, bold=True)
+            lx = (card_bounds.size.width - logo_size) / 2
+            ly = card_bounds.size.height - top_margin - logo_size
+            self.header_logo_view = add_image_view(logo_img, lx, ly, logo_size, logo_size)
+        # No title label
 
-        # Language selector
-        self.lang_label = add_label(_t('settings.language'), 16, card_bounds.size.height - 80, 120, 20)
-        self.lang_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(150, card_bounds.size.height - 84, 220, 28), False)
+        # Layout constants
+        pad_x = 24  # left padding for labels/checkbox
+        group_shift_x = 10  # slight right shift for centered groups
+        # Language selector + uniform row centers (equal spacing)
+        row_gap = 52
+        language_center = (ly - 36) if logo_img is not None else (card_bounds.size.height - 96)
+        self.lang_label = add_label(_t('settings.language'), pad_x, language_center - 11, 120, 22)
+        self.lang_popup = BBPointerPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(pad_x + 140, language_center - 17, 220, 34), False)
         self.lang_popup.addItemWithTitle_("English")
         self.lang_popup.addItemWithTitle_("中文")
         self.lang_popup.addItemWithTitle_("日本語")
         self.lang_popup.addItemWithTitle_("한국어")
         self.lang_popup.addItemWithTitle_("Français")
         try:
-            # Remove gray border and background for a cleaner look
+            # Add a subtle visible border and rounded corners for discoverability
             self.lang_popup.setWantsLayer_(True)
             self.lang_popup.setBordered_(False)
             self.lang_popup.layer().setBackgroundColor_(NSColor.clearColor().CGColor())
-            self.lang_popup.layer().setBorderWidth_(0.0)
+            self.lang_popup.layer().setCornerRadius_(6.0)
+            self.lang_popup.layer().setBorderWidth_(1.0)
+            try:
+                dark = self._is_dark()
+                border = (NSColor.whiteColor().colorWithAlphaComponent_(0.22) if dark else NSColor.blackColor().colorWithAlphaComponent_(0.18))
+                self.lang_popup.layer().setBorderColor_(border.CGColor())
+            except Exception:
+                pass
+            try:
+                self.lang_popup.setFont_(NSFont.systemFontOfSize_(16))
+            except Exception:
+                pass
         except Exception:
             pass
         self.card.addSubview_(self.lang_popup)
 
         # Launch at login
-        self.launch_checkbox = NSButton.alloc().initWithFrame_(NSMakeRect(16, card_bounds.size.height - 120, 260, 20))
+        self.launch_checkbox = BBPointerCheckbox.alloc().initWithFrame_(NSMakeRect(pad_x, 0, 260, 24))
         self.launch_checkbox.setButtonType_(NSSwitchButton)
         self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
+        try:
+            self.launch_checkbox.setFont_(NSFont.systemFontOfSize_(16))
+        except Exception:
+            pass
         self.card.addSubview_(self.launch_checkbox)
         # Disable on non-Darwin
         try:
@@ -395,10 +474,15 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
 
-        # Hotkey row
-        self.hotkey_label = add_label(_t('settings.hotkey'), 16, card_bounds.size.height - 160, 80, 24)
-        self.hotkey_value = add_label("", 110, card_bounds.size.height - 160, 220, 24)
-        self.hotkey_button = add_button(_t('button.change'), card_bounds.size.width - 148, card_bounds.size.height - 166, 132, 36)
+        # Hotkey row — center aligned using row centers
+        hotkey_center = language_center - row_gap
+        self.hotkey_label = add_label(_t('settings.hotkey'), pad_x, hotkey_center - 12, 80, 24)
+        # Center the value + button group horizontally, but avoid overlap with label area
+        group_w = 220 + 16 + 112
+        min_left = pad_x + 80 + 12
+        hv_x = max(min_left, (card_bounds.size.width - group_w) / 2 + group_shift_x)
+        self.hotkey_value = add_label("", hv_x, hotkey_center - 12, 220, 24)
+        self.hotkey_button = add_button(_t('button.change'), hv_x + 220 + 16, hotkey_center - 17, 112, 34)
         try:
             self.hotkey_button.setStyleDark_(True)
         except Exception:
@@ -410,9 +494,11 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
 
-        # Clear cache: place below hotkey row, above launch-at-login
-        clear_y = max(16, (card_bounds.size.height - 166) - 44)
-        self.clear_cache_button = add_button(_t('settings.clearCache'), 16, clear_y, 200, 36)
+        # Clear cache — center aligned using row centers
+        clear_center = hotkey_center - row_gap
+        cc_w, cc_h = 140, 34
+        cc_x = (card_bounds.size.width - cc_w) / 2 + group_shift_x
+        self.clear_cache_button = add_button(_t('settings.clearCache'), cc_x, clear_center - cc_h / 2, cc_w, cc_h)
         try:
             self.clear_cache_button.setStyleDark_(True)
         except Exception:
@@ -420,15 +506,19 @@ class SettingsWindow(NSObject):
         self.clear_cache_button.setTarget_(self)
         self.clear_cache_button.setAction_("clearCache:")
 
-        # Save / Cancel
-        # Action bar (bottom right)
-        cancel_w, cancel_h = 100, 36
-        save_w, save_h = 120, 36
+        # Save / Cancel — center aligned using row centers
+        extra_bottom_gap = 12  # slightly larger gap between Clear and Save
+        bottom_center = clear_center - (row_gap + extra_bottom_gap)
+        cancel_w, cancel_h = 92, 34
+        save_w, save_h = 104, 34
         pad = 16
         spacing = 12
-        cancel_x = card_bounds.size.width - cancel_w - pad
-        save_x = cancel_x - spacing - save_w
-        self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", save_x, 16, save_w, save_h)
+        # Center the Save+Cancel group horizontally with slight right shift
+        group_w2 = save_w + spacing + cancel_w
+        group_left = (card_bounds.size.width - group_w2) / 2 + group_shift_x
+        save_x = group_left
+        cancel_x = group_left + save_w + spacing
+        self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", save_x, bottom_center - save_h / 2, save_w, save_h)
         self.save_button.setTarget_(self)
         self.save_button.setAction_("saveSettings:")
         try:
@@ -440,7 +530,7 @@ class SettingsWindow(NSObject):
             self.save_button.setStyleDark_(True)
         except Exception:
             pass
-        self.cancel_button = add_button(_t('button.cancel'), cancel_x, 16, cancel_w, cancel_h)
+        self.cancel_button = add_button(_t('button.cancel'), cancel_x, bottom_center - cancel_h / 2, cancel_w, cancel_h)
         self.cancel_button.setTarget_(self)
         self.cancel_button.setAction_("cancelSettings:")
         try:
@@ -451,9 +541,9 @@ class SettingsWindow(NSObject):
             self.cancel_button.setStyleDark_(True)
         except Exception:
             pass
-        # Launch at login aligned with Save/Cancel row (same baseline)
+        # Launch at login aligned with Save/Cancel row center
         try:
-            self.launch_checkbox.setFrameOrigin_((16, 16))
+            self.launch_checkbox.setFrameOrigin_((16, bottom_center - 24 / 2))
         except Exception:
             pass
 
@@ -682,9 +772,51 @@ class SettingsWindow(NSObject):
             pass
 
     def _load_logo_for_appearance(self):
-        """Load a small logo matching current appearance (light/dark)."""
+        """Load a small colored rounded app logo for the header.
+
+        Prefer a colored icon from icon.iconset; fall back to monochrome
+        white/black assets when unavailable.
+        """
         try:
-            # Determine dark vs light
+            # Preferred colored icon candidates (rounded PNGs)
+            color_candidates = [
+                'logo/icon.iconset/icon_32x32@2x.png',
+                'logo/icon.iconset/icon_32x32.png',
+                'logo/icon.iconset/icon_64x64.png',
+            ]
+            # Try package data first (inside app bundle)
+            try:
+                import pkgutil
+                from Foundation import NSData
+                for rel in color_candidates:
+                    data = pkgutil.get_data('bubblebot', rel)
+                    if data:
+                        nsdata = NSData.dataWithBytes_length_(data, len(data))
+                        img = NSImage.alloc().initWithData_(nsdata)
+                        if img is not None:
+                            try: img.setTemplate_(False)
+                            except Exception: pass
+                            try: img.setSize_((20, 20))
+                            except Exception: pass
+                            return img
+            except Exception:
+                pass
+            # Fallback to filesystem path next to module
+            try:
+                import os
+                here = os.path.dirname(os.path.abspath(__file__))
+                for rel in color_candidates:
+                    p = os.path.join(here, '..', rel)
+                    p = os.path.normpath(p)
+                    img = NSImage.alloc().initWithContentsOfFile_(p)
+                    if img is not None:
+                        return img
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # Last resort: fall back to monochrome for current appearance
+        try:
             dark = False
             try:
                 app = NSApp
@@ -697,33 +829,14 @@ class SettingsWindow(NSObject):
             except Exception:
                 pass
             rel_path = 'logo/logo_white.png' if dark else 'logo/logo_black.png'
-            # Try to load from package data first (works in bundle)
-            try:
-                import pkgutil
-                data = pkgutil.get_data('bubblebot', rel_path)
-                if data:
-                    from Foundation import NSData
-                    nsdata = NSData.dataWithBytes_length_(data, len(data))
-                    img = NSImage.alloc().initWithData_(nsdata)
-                    if img is not None:
-                        try: img.setTemplate_(False)
-                        except Exception: pass
-                        try: img.setSize_((20, 20))
-                        except Exception: pass
-                        return img
-            except Exception:
-                pass
-            # Fallback to filesystem path next to module
-            try:
-                import os
-                here = os.path.dirname(os.path.abspath(__file__))
-                p = os.path.join(here, '..', rel_path)
-                p = os.path.normpath(p)
-                img = NSImage.alloc().initWithContentsOfFile_(p)
+            import pkgutil
+            from Foundation import NSData
+            data = pkgutil.get_data('bubblebot', rel_path)
+            if data:
+                nsdata = NSData.dataWithBytes_length_(data, len(data))
+                img = NSImage.alloc().initWithData_(nsdata)
                 if img is not None:
                     return img
-            except Exception:
-                pass
         except Exception:
             pass
         return None
@@ -755,20 +868,22 @@ class SettingsWindow(NSObject):
             return False
 
     def _apply_theme(self):
-        # Apply black/white Vercel style to card and window background
+        # Apply Vercel-style card and keep the window itself transparent so rounded corners are visible
         try:
             dark = self._is_dark()
             if self.window:
-                bg = NSColor.blackColor() if dark else NSColor.whiteColor()
                 try:
-                    self.window.setBackgroundColor_(bg)
+                    self.window.setOpaque_(False)
+                    self.window.setBackgroundColor_(NSColor.clearColor())
                 except Exception:
                     pass
             if hasattr(self, 'card') and self.card and self.card.layer():
                 card_bg = NSColor.colorWithCalibratedWhite_alpha_(0.10, 0.96) if dark else NSColor.whiteColor()
-                border = (NSColor.whiteColor().colorWithAlphaComponent_(0.08) if dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
                 self.card.layer().setBackgroundColor_(card_bg.CGColor())
-                self.card.layer().setBorderColor_(border.CGColor())
+                try:
+                    self.card.layer().setBorderWidth_(0.0)
+                except Exception:
+                    pass
         except Exception:
             pass
 
