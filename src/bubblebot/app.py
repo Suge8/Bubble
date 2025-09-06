@@ -1311,39 +1311,76 @@ class AppDelegate(NSObject):
         # Use variable length to let the system size appropriately
         self.status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
 
-        # Robust icon loader that works for both source tree and py2app zip
-        def _load_nsimage_from_package(rel_path):
-            """Load NSImage from package data (zip-safe), falling back to file path."""
-            img = None
+        # Robust icon loader that works both in source tree and py2app bundle
+        def _load_nsimage(rel_path, name_hint=None):
+            # 1) Try NSBundle Resources (works when setup.py copies "logo" dir)
+            try:
+                bundle = NSBundle.mainBundle()
+                # Allow path like "logo/logo_white.png" or just name+type
+                if name_hint and "." in name_hint:
+                    base, ext = name_hint.rsplit(".", 1)
+                else:
+                    base, ext = None, None
+                # Precise lookup in subdirectory
+                path = None
+                try:
+                    path = bundle.pathForResource_ofType_inDirectory_(base or None, ext or None, "logo") if base and ext else None
+                except Exception:
+                    path = None
+                if not path:
+                    # Fallback: join resourcePath + rel_path
+                    base_dir = bundle.resourcePath()
+                    if base_dir:
+                        p = os.path.join(str(base_dir), rel_path)
+                        if os.path.exists(p):
+                            path = p
+                if path:
+                    img = NSImage.alloc().initWithContentsOfFile_(path)
+                    if img is not None:
+                        try: img.setTemplate_(False)
+                        except Exception: pass
+                        try: img.setSize_(NSSize(18, 18))
+                        except Exception: pass
+                        return img
+            except Exception:
+                pass
+
+            # 2) Try pkgutil data (zip-safe)
             try:
                 import pkgutil
                 data = pkgutil.get_data('bubblebot', rel_path)
                 if data:
                     nsdata = NSData.dataWithBytes_length_(data, len(data))
                     img = NSImage.alloc().initWithData_(nsdata)
+                    if img is not None:
+                        try: img.setTemplate_(False)
+                        except Exception: pass
+                        try: img.setSize_(NSSize(18, 18))
+                        except Exception: pass
+                        return img
             except Exception:
-                img = None
-            if img is None:
-                try:
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-                    p = os.path.join(script_dir, rel_path)
-                    if os.path.exists(p):
-                        img = NSImage.alloc().initWithContentsOfFile_(p)
-                except Exception:
-                    img = None
-            if img is not None:
-                try:
-                    img.setTemplate_(False)
-                except Exception:
-                    pass
-                try:
-                    img.setSize_(NSSize(18, 18))
-                except Exception:
-                    pass
-            return img
+                pass
 
-        self.logo_white = _load_nsimage_from_package(LOGO_WHITE_PATH)
-        self.logo_black = _load_nsimage_from_package(LOGO_BLACK_PATH)
+            # 3) Try file next to module (dev mode)
+            try:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                p = os.path.join(script_dir, rel_path)
+                if os.path.exists(p):
+                    img = NSImage.alloc().initWithContentsOfFile_(p)
+                    if img is not None:
+                        try: img.setTemplate_(False)
+                        except Exception: pass
+                        try: img.setSize_(NSSize(18, 18))
+                        except Exception: pass
+                        return img
+            except Exception:
+                pass
+            return None
+
+        self.logo_white = _load_nsimage(LOGO_WHITE_PATH, name_hint="logo_white.png")
+        self.logo_black = _load_nsimage(LOGO_BLACK_PATH, name_hint="logo_black.png")
+        if not self.logo_white or not self.logo_black:
+            print("WARNING: status bar icon images failed to load")
         # 生成圆角版本图标用于状态栏（更精致）
         # Keep originals as template images; we will round at runtime to enforce silhouette
         self.logo_white_rounded = None
@@ -1876,6 +1913,9 @@ class AppDelegate(NSObject):
         dark = appearance.bestMatchFromAppearancesWithNames_([NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) == NSAppearanceNameDarkAqua
         # Use prebuilt transparent status icons (only the central bubble)
         img = self.logo_white if dark else self.logo_black
+        if img is None:
+            print("WARNING: status bar icon missing for appearance", "dark" if dark else "light")
+            return
         try:
             self.status_item.button().setWantsLayer_(True)
         except Exception:

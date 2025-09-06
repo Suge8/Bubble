@@ -119,12 +119,22 @@ class ConfigManager:
             with open(new_p, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
-            # Also create a backup alongside the new file (optional redundancy)
+            # Also create a timestamped backup alongside the new file and keep ≤5
             try:
-                backup_p = os.path.join(os.path.dirname(new_p), "config.backup.json")
-                if not os.path.exists(backup_p):
-                    with open(backup_p, "w", encoding="utf-8") as bf:
-                        json.dump(data, bf, indent=2, ensure_ascii=False)
+                import datetime
+                ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                backup_p = os.path.join(os.path.dirname(new_p), f"config.backup.{ts}.json")
+                with open(backup_p, "w", encoding="utf-8") as bf:
+                    json.dump(data, bf, indent=2, ensure_ascii=False)
+                # prune old backups beyond 5
+                prefix = os.path.join(os.path.dirname(new_p), "config.backup.")
+                backups = [p for p in os.listdir(os.path.dirname(new_p)) if p.startswith("config.backup.") and p.endswith('.json')]
+                backups.sort(reverse=True)
+                for old in backups[5:]:
+                    try:
+                        os.remove(os.path.join(os.path.dirname(new_p), old))
+                    except Exception:
+                        pass
             except Exception:
                 pass
             return True

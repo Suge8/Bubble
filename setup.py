@@ -6,6 +6,10 @@ DATA_FILES = []
 OPTIONS = {
     # Bundle your package directory so imports “just work”
     "packages": ["bubblebot"],
+    # Explicitly copy image assets to app Resources for NSBundle lookups
+    "resources": [
+        "src/bubblebot/logo",
+    ],
     "includes": [],
     # GUI app (no console window)
     "argv_emulation": False,
