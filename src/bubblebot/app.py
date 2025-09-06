@@ -461,6 +461,11 @@ class AppDelegate(NSObject):
             # 非多窗口：使用根视图/主窗口 contentView
             if parent is None:
                 parent = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
+            # Prefer stacking above the top bar to guarantee visibility
+            try:
+                rel = self.top_bar if getattr(self, 'top_bar', None) is not None else None
+            except Exception:
+                rel = None
             # 记录调试信息（仅 BB_DEBUG=1 时输出）
             try:
                 print(f"DEBUG: show_toast parent={parent} homepage={bool(getattr(self,'last_loaded_is_homepage',False))} multi={bool(getattr(self,'is_multiwindow_mode',False))}")
@@ -468,8 +473,8 @@ class AppDelegate(NSObject):
                 pass
             if parent is None:
                 return
-            # 让 Toast 永远浮在最上层（relative_to=None 表示置顶）
-            ToastManager.show(text=text, parent=parent, duration=duration, relative_to=None)
+            # 让 Toast 永远浮在最上层（相对 top_bar 置顶，确保不被覆盖）
+            ToastManager.show(text=text, parent=parent, duration=duration, relative_to=rel)
         except Exception as e:
             print(f"WARNING: show_toast 失败: {e}")
 

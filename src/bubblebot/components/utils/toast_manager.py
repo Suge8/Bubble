@@ -43,24 +43,32 @@ class ToastManager:
                     pass
                 cls._current_view = None
 
-            # Container
+            # Container (opaque, high-contrast, always on top)
             width = 360
-            height = 28
+            height = 32
             frame = parent.bounds()
             x = (frame.size.width - width) / 2
             y = frame.size.height - height - 6  # near top inside parent
             view = NSView.alloc().initWithFrame_(((x, y), (width, height)))
             view.setWantsLayer_(True)
             try:
-                # semi-transparent dark background for contrast
+                # Opaque dark background for maximum visibility
                 view.layer().setCornerRadius_(8.0)
                 view.layer().setMasksToBounds_(True)
-                view.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.75).CGColor())
+                # Use a near-opaque black with a subtle border for contrast
+                view.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.92).CGColor())
+                try:
+                    view.layer().setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.15).CGColor())
+                    view.layer().setBorderWidth_(1.0)
+                    view.layer().setShadowOpacity_(0.25)
+                    view.layer().setShadowRadius_(6.0)
+                except Exception:
+                    pass
             except Exception:
                 pass
 
             # Label
-            label = NSTextField.alloc().initWithFrame_(((10, 4), (width - 20, height - 8)))
+            label = NSTextField.alloc().initWithFrame_(((12, 5), (width - 24, height - 10)))
             label.setBezeled_(False)
             label.setDrawsBackground_(False)
             label.setEditable_(False)
@@ -70,7 +78,7 @@ class ToastManager:
             except Exception:
                 pass
             try:
-                label.setFont_(NSFont.systemFontOfSize_(12))
+                label.setFont_(NSFont.boldSystemFontOfSize_(13))
             except Exception:
                 pass
             label.setStringValue_(text or "")
@@ -78,11 +86,8 @@ class ToastManager:
 
             # Attach to parent on top
             try:
-                # 放到最上层；如提供 relative_to，确保在其之上
-                if relative_to is not None:
-                    parent.addSubview_positioned_relativeTo_(view, NSWindowAbove, relative_to)
-                else:
-                    parent.addSubview_positioned_relativeTo_(view, NSWindowAbove, None)
+                # Put on the very top; if relative_to provided, stack above it for safety
+                parent.addSubview_positioned_relativeTo_(view, NSWindowAbove, relative_to)
             except Exception:
                 try:
                     parent.addSubview_(view)
@@ -90,6 +95,12 @@ class ToastManager:
                     return
 
             cls._current_view = view
+            try:
+                # Ensure fully visible (no accidental zero alpha)
+                view.setHidden_(False)
+                view.setAlphaValue_(1.0)
+            except Exception:
+                pass
 
             # Schedule removal
             def _dismiss(_):
@@ -107,6 +118,7 @@ class ToastManager:
                 )
                 # store weak ref for which view to dismiss
                 view._toast_timer = timer  # type: ignore
+                # Use default mode so it ticks during normal interactions
                 NSRunLoop.currentRunLoop().addTimer_forMode_(timer, NSDefaultRunLoopMode)
             except Exception:
                 # Fallback: immediate removal

@@ -1,24 +1,66 @@
-# Virtualenv
+#############################################
+# Environments
+#############################################
 .venv/
+venv/
+env/
+ENV/
 
-# Python caches
+#############################################
+# Python caches & tooling
+#############################################
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ropeproject/
+.coverage
+coverage.xml
+htmlcov/
 
-# Build artifacts
+#############################################
+# Packaging / build artifacts
+#############################################
 build/
 dist/
 *.app
 *.dmg
 *.spec
+.eggs/
+*.egg
+*.egg-info/
+src/bubblebot.egg-info/
 
-# macOS hidden files
+#############################################
+# Editors & local tooling
+#############################################
+.idea/
+.vscode/
+.aim/
+.claude/
+.spec-workflow/
+
+#############################################
+# macOS & temporary files
+#############################################
 .DS_Store
-
-# Logs
 *.log
-# Temporary assets
+*.tmp
 tmp.*
 .tmp*
 */tmp.*
 tmp_*/
+*.icns
+*.iconset/
+
+#############################################
+# App-specific temporary assets
+#############################################
+test.iconset/
+tmp.iconset/
+tmp_icon_extracted/
+tmp_old_scheme.iconset/
+tmp.AppIcon.iconset/
+tmp.check.iconset/
+tmp.squircle.verify.iconset/
+tmp.verify.iconset/
