@@ -44,6 +44,7 @@ from AppKit import (
     NSTrackingInVisibleRect,
     NSBezierPath,
     NSRectFill,
+    NSFocusRingTypeNone,
 )
 
 from Foundation import NSObject
@@ -62,18 +63,18 @@ class VercelButton(NSButton):
             self.setWantsLayer_(True)
             self.layer().setCornerRadius_(8.0)
             self.layer().setMasksToBounds_(True)
-            # Base ghost style (subtle surface)
-            self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.06)
-            self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10)
-            self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.16)
+            # Base ghost style (subtle surface, no border)
+            self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08)
+            self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.14)
+            self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.22)
             self.layer().setBackgroundColor_(self._base_bg.CGColor())
-            # Subtle border
-            self.layer().setBorderWidth_(1.0)
+            # No visible border and no blue focus ring
+            self.layer().setBorderWidth_(0.0)
             try:
-                border = NSColor.separatorColor().colorWithAlphaComponent_(0.25)
+                self.setFocusRingType_(NSFocusRingTypeNone)
+                self.setBordered_(False)
             except Exception:
-                border = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.15)
-            self.layer().setBorderColor_(border.CGColor())
+                pass
         except Exception:
             pass
         self._tracking_area = None
@@ -124,19 +125,17 @@ class VercelButton(NSButton):
         try:
             if primary:
                 # Use system accent with transparency
-                self._base_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.24)
-                self._hover_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.30)
-                self._press_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.38)
+                self._base_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.28)
+                self._hover_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.36)
+                self._press_bg = NSColor.controlAccentColor().colorWithAlphaComponent_(0.44)
+                self.layer().setBorderWidth_(0.0)
                 self.layer().setBorderColor_(NSColor.clearColor().CGColor())
             else:
-                self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.06)
-                self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10)
-                self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.16)
-                try:
-                    border = NSColor.separatorColor().colorWithAlphaComponent_(0.25)
-                except Exception:
-                    border = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.15)
-                self.layer().setBorderColor_(border.CGColor())
+                self._base_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08)
+                self._hover_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.14)
+                self._press_bg = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.22)
+                self.layer().setBorderWidth_(0.0)
+                self.layer().setBorderColor_(NSColor.clearColor().CGColor())
             self.layer().setBackgroundColor_(self._base_bg.CGColor())
         except Exception:
             pass
@@ -216,10 +215,10 @@ class SettingsWindow(NSObject):
         content = self.window.contentView()
         bounds = content.bounds()
 
-        # Background blur (unified with app aesthetic)
+        # Background: default to solid (black/white Vercel style). Enable blur only when BB_USE_BLUR=1
         try:
-            if os.environ.get('BB_NO_EFFECTS') == '1':
-                raise Exception('effects disabled by env')
+            if os.environ.get('BB_NO_EFFECTS') == '1' or os.environ.get('BB_USE_BLUR') != '1':
+                raise Exception('effects disabled or blur not requested')
             self.bg_blur = NSVisualEffectView.alloc().initWithFrame_(bounds)
             self.bg_blur.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
             try:
@@ -244,6 +243,8 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
         content.addSubview_(self.card)
+        # Apply black/white theme to card and controls
+        self._apply_theme()
 
         def add_label(text, x, y, w, h, bold=False):
             lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
@@ -272,8 +273,14 @@ class SettingsWindow(NSObject):
                 btn.setWantsLayer_(True)
                 btn.layer().setCornerRadius_(8.0)
                 btn.layer().setMasksToBounds_(True)
-                # Subtle card-like background
-                btn.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08).CGColor())
+                # Subtle card-like background, no borders
+                btn.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10).CGColor())
+                try:
+                    btn.setFocusRingType_(NSFocusRingTypeNone)
+                    btn.setBordered_(False)
+                    btn.setFont_(NSFont.systemFontOfSize_(14))
+                except Exception:
+                    pass
             except Exception:
                 pass
             return btn
@@ -297,9 +304,9 @@ class SettingsWindow(NSObject):
 
         # Header with logo + title
         logo_img = self._load_logo_for_appearance()
-        if logo_img is not None:
         card_bounds = self.card.bounds()
-        self.header_logo_view = add_image_view(logo_img, 16, card_bounds.size.height - 40, 20, 20)
+        if logo_img is not None:
+            self.header_logo_view = add_image_view(logo_img, 16, card_bounds.size.height - 40, 20, 20)
         self.header_title_label = add_label(_t('settings.title'), 44, card_bounds.size.height - 38, 260, 22, bold=True)
 
         # Language selector
@@ -326,10 +333,10 @@ class SettingsWindow(NSObject):
         self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
         self.card.addSubview_(self.launch_checkbox)
 
-        # Hotkey
-        self.hotkey_label = add_label(_t('settings.hotkey'), 16, card_bounds.size.height - 160, 80, 20)
-        self.hotkey_value = add_label("", 110, card_bounds.size.height - 160, 180, 20)
-        self.hotkey_button = add_button(_t('button.change'), card_bounds.size.width - 136, card_bounds.size.height - 164, 120, 30)
+        # Hotkey row
+        self.hotkey_label = add_label(_t('settings.hotkey'), 16, card_bounds.size.height - 160, 80, 24)
+        self.hotkey_value = add_label("", 110, card_bounds.size.height - 160, 220, 24)
+        self.hotkey_button = add_button(_t('button.change'), card_bounds.size.width - 148, card_bounds.size.height - 166, 132, 36)
         self.hotkey_button.setTarget_(self)
         self.hotkey_button.setAction_("changeHotkey:")
         try:
@@ -337,14 +344,20 @@ class SettingsWindow(NSObject):
         except Exception:
             pass
 
-        # Clear cache
-        self.clear_cache_button = add_button(_t('settings.clearCache'), 16, card_bounds.size.height - 208, 200, 30)
+        # Clear cache (bottom-left)
+        self.clear_cache_button = add_button(_t('settings.clearCache'), 16, 16, 200, 36)
         self.clear_cache_button.setTarget_(self)
         self.clear_cache_button.setAction_("clearCache:")
 
         # Save / Cancel
         # Action bar (bottom right)
-        self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", card_bounds.size.width - 196, 16, 96, 32)
+        cancel_w, cancel_h = 100, 36
+        save_w, save_h = 120, 36
+        pad = 16
+        spacing = 12
+        cancel_x = card_bounds.size.width - cancel_w - pad
+        save_x = cancel_x - spacing - save_w
+        self.save_button = add_button(_t('button.save') if hasattr(self, 'window') else "Save", save_x, 16, save_w, save_h)
         self.save_button.setTarget_(self)
         self.save_button.setAction_("saveSettings:")
         try:
@@ -355,13 +368,15 @@ class SettingsWindow(NSObject):
             self.save_button.setPrimary_(True)
         except Exception:
             pass
-        self.cancel_button = add_button(_t('button.cancel'), card_bounds.size.width - 96, 16, 80, 32)
+        self.cancel_button = add_button(_t('button.cancel'), cancel_x, 16, cancel_w, cancel_h)
         self.cancel_button.setTarget_(self)
         self.cancel_button.setAction_("cancelSettings:")
         try:
             self.cancel_button.setAutoresizingMask_((1 << 1) | (1 << 0))
         except Exception:
             pass
+        # Launch at login checkbox to the left of Save
+        self.launch_checkbox.setFrameOrigin_((max(16, save_x - 16 - 220), 22))
 
         self._load_values_into_ui()
 
@@ -611,3 +626,30 @@ class SettingsWindow(NSObject):
                 continue
         # Fallback to an int (AppearanceBased is 0 on some SDKs)
         return 0
+
+    def _is_dark(self):
+        try:
+            app = NSApp
+            appearance = app.effectiveAppearance()
+            name = appearance.bestMatchFromAppearancesWithNames_(["NSAppearanceNameDarkAqua", "NSAppearanceNameAqua"])
+            return name == "NSAppearanceNameDarkAqua"
+        except Exception:
+            return False
+
+    def _apply_theme(self):
+        # Apply black/white Vercel style to card and window background
+        try:
+            dark = self._is_dark()
+            if self.window:
+                bg = NSColor.blackColor() if dark else NSColor.whiteColor()
+                try:
+                    self.window.setBackgroundColor_(bg)
+                except Exception:
+                    pass
+            if hasattr(self, 'card') and self.card and self.card.layer():
+                card_bg = NSColor.colorWithCalibratedWhite_alpha_(0.10, 0.96) if dark else NSColor.whiteColor()
+                border = (NSColor.whiteColor().colorWithAlphaComponent_(0.08) if dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
+                self.card.layer().setBackgroundColor_(card_bg.CGColor())
+                self.card.layer().setBorderColor_(border.CGColor())
+        except Exception:
+            pass

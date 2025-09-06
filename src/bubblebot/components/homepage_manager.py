@@ -135,7 +135,8 @@ class HomepageManager(NSObject):
             except Exception:
                 pass
         # Fallback to filesystem in dev
-        base = os.path.dirname(os.path.abspath(__file__))
+        # components/ -> package root (../)
+        base = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
         for p in (
             os.path.join(base, 'logo', 'icon.iconset', 'icon_64x64.png'),
             os.path.join(base, 'logo', 'icon.iconset', 'icon_128x128.png'),
@@ -368,7 +369,12 @@ class HomepageManager(NSObject):
         return self._show_platform_management_rows()
 
     def _show_platform_management_rows(self) -> str:
-        """横条风格主页：一行一平台，点击行切换启用；右侧省略号可“重复添加”；气泡展示多页面数量并可删除。"""
+        """横条风格主页：一行一平台，点击行切换启用；右侧省略号可“重复添加”；气泡展示多页面数量并可删除。
+
+        同时在顶部显示品牌区（包含 Bubble logo），保证开发与打包后显示一致：
+        - 优先使用打包资源（pkgutil.get_data）生成 data URL
+        - 开发模式回退到文件系统路径（src/bubblebot/logo/...）
+        """
         enabled = self.get_enabled_platforms()
         available = self.get_available_platforms()
         def _windows_list(pid):
@@ -396,6 +402,13 @@ class HomepageManager(NSObject):
               <div class=\"right\">{bubble}{more_btn}</div>
             </div>
             """
+        # 顶部品牌区（使用 data URL 或表情符号兜底）
+        brand_logo_html = (
+            f'<img class="brand-logo" src="{self.logo_data_url}" alt="Bubble" />'
+            if getattr(self, 'logo_data_url', None) else
+            '<div class="brand-logo-fallback">🫧</div>'
+        )
+
         html = f"""
         <!DOCTYPE html>
         <html lang=\"zh-CN\">
@@ -407,6 +420,12 @@ class HomepageManager(NSObject):
                 :root {{ --bg:#fafafa; --card:#fff; --border:#eaeaea; --text:#111; --muted:#666; --accent:#111; --radius:12px; }}
                 * {{ box-sizing: border-box; }}
                 body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); }}
+                .brand {{
+                    max-width:740px; margin:0 auto 8px; display:flex; align-items:center; gap:10px; padding:8px 10px;
+                }}
+                .brand-logo {{ width:28px; height:28px; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,.08); }}
+                .brand-logo-fallback {{ font-size:22px; }}
+                .brand-name {{ font-weight:700; font-size:14px; letter-spacing:.2px; }}
                 .list {{ max-width:740px; margin:0 auto; display:flex; flex-direction:column; gap:8px; }}
                 .hrow {{ display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 12px; cursor:pointer; transition: background .18s ease, box-shadow .18s ease, transform .18s ease; }}
                 .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); transform: translateY(-1px); }}
@@ -428,12 +447,11 @@ class HomepageManager(NSObject):
                 .skeleton {{ position: relative; overflow: hidden; background: #e5e7eb; border-radius: 8px; }}
                 .skeleton::after {{ content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent); animation: sk-shine 1.2s infinite; }}
                 @keyframes sk-shine {{ 100% {{ transform: translateX(100%); }} }}
-                /* brand 头部不再在页面显示（顶栏已显示） */
-                .brand {{ display:none; }}
+                /* 显示品牌区，确保与打包一致 */
             </style>
         </head>
         <body>
-            
+            <div class=\"brand\">{brand_logo_html}<div class=\"brand-name\">Bubble</div></div>
             <div class=\"list\">{rows}</div>
             <div id=\"menu\" class=\"menu\"><div class=\"item\" data-action=\"duplicate\">重复添加</div></div>
             <div id=\"popover\" class=\"popover\"></div>
@@ -494,6 +512,12 @@ class HomepageManager(NSObject):
             str: 要加载的HTML内容或URL
         """
         # 返回首次启动引导页面的HTML内容
+        # 顶部 logo：优先使用 data URL，兜底使用表情符号
+        _first_logo_html = (
+            f'<img style="width:56px;height:56px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.15)" src="{self.logo_data_url}" alt="Bubble" />'
+            if getattr(self, 'logo_data_url', None) else
+            '<div class="logo">🫧</div>'
+        )
         html_content = f"""
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -565,7 +589,7 @@ class HomepageManager(NSObject):
         </head>
         <body>
             <div class="container">
-                <div class="logo">🫧</div>
+                {_first_logo_html}
                 <h1>{_t('home.welcome')}</h1>
                 <p>您的智能AI助手已准备就绪！<br>请选择您最常使用的AI平台开始体验：</p>
                 

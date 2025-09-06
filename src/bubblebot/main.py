@@ -19,8 +19,6 @@ from .app import (
 from .launcher import (
     check_permissions,
     ensure_accessibility_permissions,
-    install_startup,
-    uninstall_startup
 )
 from .health_checks import (
     health_check_decorator
@@ -68,16 +66,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=f"macOS {APP_TITLE} Overlay App - Dedicated window that can be summoned and dismissed with your keyboard shortcut."
     )
-    parser.add_argument(
-        "--install-startup",
-        action="store_true",
-        help=f"Install {APP_TITLE} to run at login",
-    )
-    parser.add_argument(
-        "--uninstall-startup",
-        action="store_true",
-        help=f"Uninstall {APP_TITLE} from running at login",
-    )
+    # Autolauncher flags removed (3.1)
     parser.add_argument(
         "--check-permissions",
         action="store_true",
@@ -89,13 +78,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    if args.install_startup:
-        install_startup()
-        return
-
-    if args.uninstall_startup:
-        uninstall_startup()
-        return
+    # Autolauncher actions removed (3.1)
 
     if args.check_permissions:
         is_trusted = check_permissions(ask=False)
@@ -111,10 +94,7 @@ def main():
     # Default behavior: run the app and inform user of startup options
     print()
     print(f"Starting macOS {APP_TITLE} overlay.")
-    print()
-    print(f"To run at login, use:      {APP_TITLE.lower()} --install-startup")
-    print(f"To remove from login, use: {APP_TITLE.lower()} --uninstall-startup")
-    print()
+    # Autolauncher messaging removed (3.1)
     
     # 初始化应用组件
     print("DEBUG: 开始初始化应用组件...")

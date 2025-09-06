@@ -39,52 +39,7 @@ def get_executable():
         program_args = [sys.executable, "-m", APP_TITLE.lower()]
     return program_args
 
-# --- LaunchAgent Install/Uninstall ---
-
-def install_startup():
-    """
-    Install BubbleBot as a LaunchAgent (run at login) for this user.
-    """
-    username = getpass.getuser()
-    program_args = get_executable()
-    plist = {
-        "Label": f"com.{username}.{APP_TITLE.lower()}",
-        "ProgramArguments": program_args,
-        "RunAtLoad": True,
-        "KeepAlive": True,
-    }
-    launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
-    launch_agents_dir.mkdir(parents=True, exist_ok=True)
-    plist_path = launch_agents_dir / f"com.{username}.{APP_TITLE.lower()}.plist"
-    with open(plist_path, "wb") as f:
-        plistlib.dump(plist, f)
-    result = os.system(f"launchctl load {plist_path}")
-    if result != 0:
-        print(f"Failed to load LaunchAgent. Exit code: {result}")
-        return False
-    print(f"✅ BubbleBot installed as a startup app (LaunchAgent created at {plist_path}).")
-    print(f"To uninstall, run: {APP_TITLE.lower()} --uninstall-startup")
-    return True
-
-def uninstall_startup():
-    """
-    Remove BubbleBot LaunchAgent from user login items.
-    """
-    username = getpass.getuser()
-    launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
-    plist_path = launch_agents_dir / f"com.{username}.{APP_TITLE.lower()}.plist"
-    if plist_path.exists():
-        try:
-            os.system(f"launchctl unload {plist_path}")
-            print(f"BubbleBot LaunchAgent unloaded.")
-        except Exception as e:
-            print(f"Failed to unload LaunchAgent. Exception:\n{e}")
-        print(f"LaunchAgent file removed: {plist_path}")
-        os.remove(plist_path)
-        return True
-    else:
-        print("No BubbleBot LaunchAgent found. Nothing to uninstall.")
-        return False
+# --- LaunchAgent (Autolauncher) removed in 3.1 ---
 
 # --- Accessibility Permissions ---
 
@@ -133,5 +88,4 @@ def ensure_accessibility_permissions():
         print("Permissions granted! Exiting for auto-restart...")
         return
     else:
-        print("Permissions NOT granted within time limit. Uninstalling BubbleBot.")
-        uninstall_startup()
+        print("Permissions NOT granted within time limit.")

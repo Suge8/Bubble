@@ -1433,8 +1433,12 @@ class AppDelegate(NSObject):
 
     def _format_launcher_hotkey(self) -> str:
         try:
-            flags = int(LAUNCHER_TRIGGER.get('flags') or 0)
-            key = int(LAUNCHER_TRIGGER.get('key') or 0)
+            flags_val = LAUNCHER_TRIGGER.get('flags')
+            key_val = LAUNCHER_TRIGGER.get('key')
+            if flags_val in (None, 0) and key_val in (None, 0):
+                return '—'
+            flags = int(flags_val or 0)
+            key = int(key_val or 0)
         except Exception:
             flags, key = 0, 0
         parts = []

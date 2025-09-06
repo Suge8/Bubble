@@ -54,7 +54,7 @@
   - 捕获新组合键、冲突/非法提示、保存到既有路径。
   - Purpose: 集中配置入口。
 
-- [ ] 3.1 移除 Autolauncher 相关代码与引用
+- [x] 3.1 移除 Autolauncher 相关代码与引用
   - Files: src/bubblebot/autolauncher.py（若有则删）, src/bubblebot/app.py（删导入/调用）, tests/ 与 README.md（删说明）
   - 检索 `Autolauncher`/`auto launch`/`Install/Uninstall` 并清理；构建/运行通过。
   - Purpose: 删除冗余实现。

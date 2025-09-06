@@ -13,16 +13,20 @@ from pathlib import Path
 
 # Apple libraries
 from AppKit import (
+    NSApp,
     NSColor,
     NSEvent,
     NSFont,
     NSKeyDown,
     NSMakeRect,
-    NSRoundedBezelStyle,
     NSTextAlignmentCenter,
     NSTextField,
     NSView,
     NSButton,
+    NSAnimationContext,
+    NSVisualEffectView,
+    NSVisualEffectStateActive,
+    NSVisualEffectBlendingModeBehindWindow,
 )
 import objc
 from Quartz import (
@@ -56,6 +60,21 @@ SPECIAL_KEY_NAMES = {
 }
 handle_new_trigger = None
 
+class _ActionProxy(objc.lookUpClass('NSObject')):
+    def initWithHandler_(self, handler):
+        self = objc.super(_ActionProxy, self).init()
+        if self is None:
+            return None
+        self._handler = handler
+        return self
+
+    def callWithSender_(self, sender):
+        try:
+            if callable(self._handler):
+                self._handler(sender)
+        except Exception:
+            pass
+
 def load_custom_launcher_trigger():
     """Load custom launcher trigger from JSON file if it exists."""
     if TRIGGER_FILE.exists():
@@ -70,91 +89,143 @@ def load_custom_launcher_trigger():
             print(f"[BubbleBot] Failed to load custom trigger: {e}. Using default trigger.", flush=True)
 
 def set_custom_launcher_trigger(app):
-    """Show UI to set a new global hotkey trigger."""
+    """Show a polished Vercel-style overlay to set a new global hotkey trigger."""
+    from .i18n import t as _t
     app.showWindow_(None)
-    print("Setting new BubbleBot launch shortcut. (Press keys or click Cancel to abort)", flush=True)
-    # Disable the current trigger
-    LAUNCHER_TRIGGER["flags"] = None
-    LAUNCHER_TRIGGER["key"] = None
+    print("Setting new BubbleBot launch shortcut. (Press keys or click Cancel)", flush=True)
+
+    # Preserve previous trigger so Cancel can restore
+    prev_flags, prev_key = LAUNCHER_TRIGGER.get("flags"), LAUNCHER_TRIGGER.get("key")
+    # Disable the current trigger until user picks a new one
+    LAUNCHER_TRIGGER["flags"], LAUNCHER_TRIGGER["key"] = None, None
+
     # Get the content view bounds
     content_view = app.window.contentView()
     content_bounds = content_view.bounds()
-    # Create the overlay view to shade the main application
+
+    # Overlay dim layer (black alpha) + optional blur underlay
     overlay_view = NSView.alloc().initWithFrame_(content_bounds)
     overlay_view.setWantsLayer_(True)
-    overlay_view.layer().setBackgroundColor_(NSColor.colorWithWhite_alpha_(0.0, 0.5).CGColor())  # Semi-transparent black
-
-    # Define container dimensions
-    container_width = 400
-    container_height = 200
-    container_x = (content_bounds.size.width - container_width) / 2
-    container_y = (content_bounds.size.height - container_height) / 2
-    container_frame = NSMakeRect(container_x, container_y, container_width, container_height)
-    container_view = NSView.alloc().initWithFrame_(container_frame)
-    container_view.setWantsLayer_(True)
-    # Slightly blueish background for BubbleBot branding (can tweak)
-    container_view.layer().setBackgroundColor_(NSColor.colorWithCalibratedRed_green_blue_alpha_(0.12, 0.20, 0.32, 0.97).CGColor())
-    container_view.layer().setCornerRadius_(12)  # Rounded corners
-
-    # Message label
-    message_label_frame = NSMakeRect(0, container_height - 60, container_width, 40)
-    message_label = NSTextField.alloc().initWithFrame_(message_label_frame)
-    message_label.setStringValue_("Press the new shortcut key combination now.")
-    message_label.setBezeled_(False)
-    message_label.setDrawsBackground_(False)
-    message_label.setEditable_(False)
-    message_label.setSelectable_(False)
-    message_label.setAlignment_(NSTextAlignmentCenter)
-    message_label.setFont_(NSFont.boldSystemFontOfSize_(17))
-
-    # Trigger display container (light background)
-    trigger_display_container_frame = NSMakeRect(60, container_height - 110, 280, 38)
-    trigger_display_container = NSView.alloc().initWithFrame_(trigger_display_container_frame)
-    trigger_display_container.setWantsLayer_(True)
-    trigger_display_container.layer().setBackgroundColor_(NSColor.lightGrayColor().CGColor())
-    trigger_display_container.layer().setCornerRadius_(7)
-
-    # Trigger display (shows "Waiting..." or key combo)
-    trigger_display_frame = NSMakeRect(0, -10, 280, 38)
-    trigger_display = NSTextField.alloc().initWithFrame_(trigger_display_frame)
-    trigger_display.setStringValue_("Waiting for key press...")
-    trigger_display.setBezeled_(False)
-    trigger_display.setDrawsBackground_(False)
-    trigger_display.setEditable_(False)
-    trigger_display.setSelectable_(False)
-    trigger_display.setAlignment_(NSTextAlignmentCenter)
-    trigger_display.setFont_(NSFont.systemFontOfSize_(16))
-
-    # Cancel Button
-    cancel_button_frame = NSMakeRect(container_width / 2 - 40, 20, 80, 32)
-    # 使用带动效的 PointerButton（与主界面统一）
+    overlay_view.setAlphaValue_(0.0)
+    overlay_view.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.45).CGColor())
     try:
-        from .app import PointerButton
-        cancel_button = PointerButton.alloc().initWithFrame_(cancel_button_frame)
-    except Exception:
-        cancel_button = NSButton.alloc().initWithFrame_(cancel_button_frame)
-    from .i18n import t as _t
-    cancel_button.setTitle_(_t("button.cancel"))
-    try:
-        cancel_button.setBezelStyle_(NSRoundedBezelStyle)
+        overlay_view.setAutoresizingMask_((1 << 1) | (1 << 4))
     except Exception:
         pass
+
+    # Card (centered)
+    card_w, card_h = 440, 220
+    cx = (content_bounds.size.width - card_w) / 2
+    cy = (content_bounds.size.height - card_h) / 2
+    card_frame = NSMakeRect(cx, cy, card_w, card_h)
+    card = NSView.alloc().initWithFrame_(card_frame)
+    card.setWantsLayer_(True)
+    # Theme-aware colors (black/white Vercel style)
+    is_dark = False
+    try:
+        appearance = NSApp.effectiveAppearance()
+        name = appearance.bestMatchFromAppearancesWithNames_(["NSAppearanceNameDarkAqua", "NSAppearanceNameAqua"])
+        is_dark = (name == "NSAppearanceNameDarkAqua")
+    except Exception:
+        pass
+    bg = (NSColor.colorWithCalibratedWhite_alpha_(0.10, 0.96) if is_dark else NSColor.whiteColor())
+    border = (NSColor.whiteColor().colorWithAlphaComponent_(0.08) if is_dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
+    card.layer().setBackgroundColor_(bg.CGColor())
+    card.layer().setCornerRadius_(12.0)
+    card.layer().setBorderWidth_(1.0)
+    card.layer().setBorderColor_(border.CGColor())
+    card.layer().setShadowColor_(NSColor.blackColor().CGColor())
+    card.layer().setShadowOpacity_(0.18)
+    card.layer().setShadowRadius_(10.0)
+    card.layer().setShadowOffset_((0.0, -1.0))
+    card.setAlphaValue_(0.0)
+
+    # Title
+    title = NSTextField.alloc().initWithFrame_(NSMakeRect(20, card_h - 54, card_w - 40, 24))
+    title.setBezeled_(False); title.setDrawsBackground_(False); title.setEditable_(False); title.setSelectable_(False)
+    title.setAlignment_(NSTextAlignmentCenter)
+    title.setFont_(NSFont.boldSystemFontOfSize_(16))
+    title.setStringValue_(_t('hotkey.overlay.title', default='Set Shortcut'))
+
+    # Subtitle
+    subtitle = NSTextField.alloc().initWithFrame_(NSMakeRect(20, card_h - 78, card_w - 40, 20))
+    subtitle.setBezeled_(False); subtitle.setDrawsBackground_(False); subtitle.setEditable_(False); subtitle.setSelectable_(False)
+    subtitle.setAlignment_(NSTextAlignmentCenter)
+    subtitle.setFont_(NSFont.systemFontOfSize_(12))
+    try:
+        subtitle.setTextColor_(NSColor.secondaryLabelColor())
+    except Exception:
+        pass
+    subtitle.setStringValue_(_t('hotkey.overlay.subtitle', default='Press the new shortcut key combination now.'))
+
+    # Trigger display pill
+    pill_w, pill_h = 300, 38
+    pill = NSView.alloc().initWithFrame_(NSMakeRect((card_w - pill_w)/2, card_h - 124, pill_w, pill_h))
+    pill.setWantsLayer_(True)
+    pill_bg = (NSColor.whiteColor().colorWithAlphaComponent_(0.06) if is_dark else NSColor.colorWithCalibratedWhite_alpha_(0.95, 1.0))
+    pill_border = (NSColor.whiteColor().colorWithAlphaComponent_(0.12) if is_dark else NSColor.blackColor().colorWithAlphaComponent_(0.08))
+    pill.layer().setBackgroundColor_(pill_bg.CGColor())
+    pill.layer().setCornerRadius_(8.0)
+    pill.layer().setBorderWidth_(1.0)
+    pill.layer().setBorderColor_(pill_border.CGColor())
+
+    display = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 1, pill_w, pill_h))
+    display.setBezeled_(False); display.setDrawsBackground_(False); display.setEditable_(False); display.setSelectable_(False)
+    display.setAlignment_(NSTextAlignmentCenter)
+    display.setFont_(NSFont.systemFontOfSize_(15))
+    display.setStringValue_(_t('hotkey.overlay.wait', default='Waiting for key press…'))
+    pill.addSubview_(display)
+
+    # Cancel button (ghost)
+    cancel = NSButton.alloc().initWithFrame_(NSMakeRect((card_w - 110)/2, 18, 110, 36))
+    cancel.setTitle_(_t('button.cancel'))
+    try:
+        cancel.setWantsLayer_(True)
+        cancel.layer().setCornerRadius_(8.0)
+        cancel.layer().setBackgroundColor_((NSColor.whiteColor().colorWithAlphaComponent_(0.10) if is_dark else NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10)).CGColor())
+        # no border, remove focus ring
+        try:
+            from AppKit import NSFocusRingTypeNone
+            cancel.setFocusRingType_(NSFocusRingTypeNone)
+            cancel.setBordered_(False)
+            cancel.setFont_(NSFont.systemFontOfSize_(14))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
     def cancel_action(sender):
         print("Cancelled custom shortcut selection.", flush=True)
+        # Restore previous trigger
+        LAUNCHER_TRIGGER["flags"], LAUNCHER_TRIGGER["key"] = prev_flags, prev_key
         overlay_view.removeFromSuperview()
         global handle_new_trigger
         handle_new_trigger = None
         app.showWindow_(None)
-    cancel_button.setTarget_(cancel_action)
-    cancel_button.setAction_("callWithSender:")
+    proxy = _ActionProxy.alloc().initWithHandler_(cancel_action)
+    cancel.setTarget_(proxy)
+    cancel.setAction_("callWithSender:")
+    # Keep proxy alive via attribute on overlay
+    setattr(overlay_view, '_cancel_proxy', proxy)
 
-    # Assemble hierarchy
-    trigger_display_container.addSubview_(trigger_display)
-    container_view.addSubview_(message_label)
-    container_view.addSubview_(trigger_display_container)
-    container_view.addSubview_(cancel_button)
-    overlay_view.addSubview_(container_view)
+    # Assemble
+    card.addSubview_(title); card.addSubview_(subtitle); card.addSubview_(pill); card.addSubview_(cancel)
+    overlay_view.addSubview_(card)
     content_view.addSubview_(overlay_view)
+
+    # Animate overlay + card
+    try:
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(0.18)
+        overlay_view.animator().setAlphaValue_(1.0)
+        card.animator().setAlphaValue_(1.0)
+        # slight rise
+        cf = card.frame()
+        card.animator().setFrameOrigin_((cf.origin.x, cf.origin.y + 6))
+        NSAnimationContext.endGrouping()
+    except Exception:
+        overlay_view.setAlphaValue_(1.0)
+        card.setAlphaValue_(1.0)
 
     # Handler for new trigger
     def custom_handle_new_trigger(event, flags, keycode):
@@ -166,9 +237,27 @@ def set_custom_launcher_trigger(app):
         print("New BubbleBot launch shortcut set:", flush=True)
         print(f"  {launcher_trigger}", flush=True)
         print(f"  {trigger_str}", flush=True)
-        trigger_display.setStringValue_(trigger_str)
-        # Remove overlay after 2 seconds
-        overlay_view.performSelector_withObject_afterDelay_("removeFromSuperview", None, 2.0)
+        try:
+            display.setStringValue_(trigger_str)
+        except Exception:
+            pass
+        # Fade out overlay after short delay
+        try:
+            from Foundation import NSTimer
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(1.0, overlay_view, 'removeFromSuperview', None, False)
+        except Exception:
+            overlay_view.removeFromSuperview()
+        # Immediately refresh menu + settings UI
+        try:
+            if hasattr(app, '_refresh_status_menu_titles'):
+                app._refresh_status_menu_titles()
+        except Exception:
+            pass
+        try:
+            if hasattr(app, '_settings_window') and app._settings_window:
+                app._settings_window.refreshHotkey_(None)
+        except Exception:
+            pass
         global handle_new_trigger
         handle_new_trigger = None
         app.showWindow_(None)
@@ -203,9 +292,7 @@ def get_trigger_string(event, flags, keycode):
 def global_show_hide_listener(app):
     """Global event listener for showing/hiding BubbleBot and for new trigger assignment."""
     DEBUG_KEY_LOG = os.environ.get("BB_KEY_DEBUG") == "1"
-    # 防抖 & 按键闩锁，避免重复切换导致窗口反复置顶/抢焦点
-    import time
-    last_toggle_ts = [0.0]  # use list for closure mutability
+    # 按键闩锁：每次按下只触发一次（去掉最小间隔限制，快速连按每次都生效）
     latch_active = [False]
     def listener(proxy, event_type, event, refcon):
         if event_type == kCGEventKeyDown:
@@ -221,15 +308,12 @@ def global_show_hide_listener(app):
             # Use bitwise AND for modifier matching (CMD + G etc)
             pressed = (keycode == LAUNCHER_TRIGGER["key"] and (flags & LAUNCHER_TRIGGER["flags"]) == LAUNCHER_TRIGGER["flags"])
             if pressed:
-                # 防抖与闩锁：仅在第一次按下时切换，忽略重复/连发
-                now = time.time()
-                if not latch_active[0] and (now - last_toggle_ts[0] > 0.4):
-                    # 若窗口可见则隐藏；不再要求是关键窗口，确保置顶模式下也能隐藏
+                # 去除时间阈值：只要不是长按重复触发（由闩锁抑制），每次按下都切换
+                if not latch_active[0]:
                     if app.window and app.window.isVisible():
                         app.hideWindow_(None)
                     else:
                         app.showWindow_(None)
-                    last_toggle_ts[0] = now
                     latch_active[0] = True
                 return None
             else:
