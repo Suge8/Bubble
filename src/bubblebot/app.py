@@ -63,10 +63,12 @@ from .listener import (
     global_show_hide_listener,
     load_custom_launcher_trigger,
     set_custom_launcher_trigger,
+    SPECIAL_KEY_NAMES,
 )
 from .components.platform_manager import PlatformManager
 from .components.config_manager import ConfigManager
 from .i18n import t as _t, set_language as _set_lang, get_language as _get_lang
+from .constants import LAUNCHER_TRIGGER
 
 
 # Add AI service endpoints
@@ -1395,98 +1397,78 @@ class AppDelegate(NSObject):
         self.status_item.button().addObserver_forKeyPath_options_context_(
             self, "effectiveAppearance", NSKeyValueObservingOptionNew, STATUS_ITEM_CONTEXT
         )
-        # Create status bar menu
+        # Create simplified status bar menu (hint + Settings… + Quit)
         menu = NSMenu.alloc().init()
-
-        # Show/Hide group
-        self.menu_show_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Show " + APP_TITLE, "showWindow:", "")
-        show_item = self.menu_show_item
-        show_item.setTarget_(self)
-        show_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("rectangle.on.rectangle.angled", None))
-        menu.addItem_(show_item)
-
-        self.menu_hide_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Hide " + APP_TITLE, "hideWindow:", "h")
-        hide_item = self.menu_hide_item
-        hide_item.setTarget_(self)
-        hide_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("eye.slash", None))
-        menu.addItem_(hide_item)
-
+        menu.setDelegate_(self)
+        # Hint item (disabled)
+        self.menu_hint_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("", None, "")
+        self.menu_hint_item.setEnabled_(False)
+        menu.addItem_(self.menu_hint_item)
         menu.addItem_(NSMenuItem.separatorItem())
-
-        # Navigation group
-        self.menu_home_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Home", "goToWebsite:", "g")
-        home_item = self.menu_home_item
-        home_item.setTarget_(self)
-        home_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("house", None))
-        menu.addItem_(home_item)
-
-        self.menu_clear_cache_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Clear Web Cache", "clearWebViewData:", "")
-        clear_data_item = self.menu_clear_cache_item
-        clear_data_item.setTarget_(self)
-        clear_data_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("trash", None))
-        menu.addItem_(clear_data_item)
-
-        self.menu_set_trigger_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Set New Trigger", "setTrigger:", "")
-        set_trigger_item = self.menu_set_trigger_item
-        set_trigger_item.setTarget_(self)
-        set_trigger_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("bolt.fill", None))
-        menu.addItem_(set_trigger_item)
-
+        # Settings…
+        self.menu_settings_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Settings…", "showSettings:", "")
+        self.menu_settings_item.setTarget_(self)
+        self.menu_settings_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("gearshape", None))
+        menu.addItem_(self.menu_settings_item)
         menu.addItem_(NSMenuItem.separatorItem())
-
-        # Autolaunch group
-        self.menu_install_autolaunch_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Install Autolauncher", "install:", "")
-        install_item = self.menu_install_autolaunch_item
-        install_item.setTarget_(self)
-        install_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("arrow.up.app", None))
-        menu.addItem_(install_item)
-
-        self.menu_uninstall_autolaunch_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Uninstall Autolauncher", "uninstall:", "")
-        uninstall_item = self.menu_uninstall_autolaunch_item
-        uninstall_item.setTarget_(self)
-        uninstall_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("arrow.down.app", None))
-        menu.addItem_(uninstall_item)
-
-        menu.addItem_(NSMenuItem.separatorItem())
-
-        # Quit item
+        # Quit
         self.menu_quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Quit", "terminate:", "q")
-        quit_item = self.menu_quit_item
-        quit_item.setTarget_(NSApp)
-        quit_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("power", None))
-        menu.addItem_(quit_item)
-        
-        # Localize menu titles initially
+        self.menu_quit_item.setTarget_(NSApp)
+        self.menu_quit_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("power", None))
+        menu.addItem_(self.menu_quit_item)
+
+        # Set the menu for the status item and localize/refresh
+        self.status_item.setMenu_(menu)
         try:
             self._refresh_status_menu_titles()
         except Exception:
             pass
 
-        # Set the menu for the status item
-        self.status_item.setMenu_(menu)
-        # Initial i18n of menu titles
+    def _format_launcher_hotkey(self) -> str:
         try:
-            self._refresh_status_menu_titles()
+            flags = int(LAUNCHER_TRIGGER.get('flags') or 0)
+            key = int(LAUNCHER_TRIGGER.get('key') or 0)
+        except Exception:
+            flags, key = 0, 0
+        parts = []
+        try:
+            # Prefer NSEvent masks if available in this scope
+            from Quartz import NSCommandKeyMask, NSAlternateKeyMask, NSShiftKeyMask, NSControlKeyMask
+            if flags & NSCommandKeyMask:
+                parts.append('⌘')
+            if flags & NSAlternateKeyMask:
+                parts.append('⌥')
+            if flags & NSShiftKeyMask:
+                parts.append('⇧')
+            if flags & NSControlKeyMask:
+                parts.append('⌃')
         except Exception:
             pass
+        # Key mapping (best-effort; includes common letters)
+        keymap = {
+            0: 'a', 1: 's', 2: 'd', 3: 'f', 4: 'h', 5: 'g', 6: 'z', 7: 'x', 8: 'c', 9: 'v',
+            11: 'b', 12: 'q', 13: 'w', 14: 'e', 15: 'r', 16: 'y', 17: 't', 31: 'o', 32: 'u',
+            34: 'i', 35: 'p', 37: 'l', 38: 'j', 40: 'k', 45: 'n', 46: 'm', 49: 'Space', 36: 'Return', 53: 'Esc'
+        }
+        keyname = keymap.get(key)
+        if not keyname:
+            try:
+                keyname = SPECIAL_KEY_NAMES.get(key)
+            except Exception:
+                keyname = None
+        if not keyname:
+            keyname = str(key)
+        parts.append(keyname)
+        return '+'.join(parts)
 
     def _refresh_status_menu_titles(self):
-        # Update menu text to current language
+        # Update simplified menu text to current language
         try:
-            if getattr(self, 'menu_show_item', None) is not None:
-                self.menu_show_item.setTitle_(f"{self._i18n_or_default('menu.show', 'Show')} {APP_TITLE}")
-            if getattr(self, 'menu_hide_item', None) is not None:
-                self.menu_hide_item.setTitle_(f"{self._i18n_or_default('menu.hide', 'Hide')} {APP_TITLE}")
-            if getattr(self, 'menu_home_item', None) is not None:
-                self.menu_home_item.setTitle_(self._i18n_or_default('menu.home', 'Home'))
-            if getattr(self, 'menu_clear_cache_item', None) is not None:
-                self.menu_clear_cache_item.setTitle_(self._i18n_or_default('menu.clearCache', 'Clear Web Cache'))
-            if getattr(self, 'menu_set_trigger_item', None) is not None:
-                self.menu_set_trigger_item.setTitle_(self._i18n_or_default('menu.setNewTrigger', 'Set New Trigger'))
-            if getattr(self, 'menu_install_autolaunch_item', None) is not None:
-                self.menu_install_autolaunch_item.setTitle_(self._i18n_or_default('menu.installAutolauncher', 'Install Autolauncher'))
-            if getattr(self, 'menu_uninstall_autolaunch_item', None) is not None:
-                self.menu_uninstall_autolaunch_item.setTitle_(self._i18n_or_default('menu.uninstallAutolauncher', 'Uninstall Autolauncher'))
+            hotkey = self._format_launcher_hotkey()
+            if getattr(self, 'menu_hint_item', None) is not None:
+                self.menu_hint_item.setTitle_(self._i18n_or_default('menu.showHideHint', 'Press {hotkey} to Show/Hide', hotkey=hotkey))
+            if getattr(self, 'menu_settings_item', None) is not None:
+                self.menu_settings_item.setTitle_(self._i18n_or_default('menu.settings', 'Settings…'))
             if getattr(self, 'menu_quit_item', None) is not None:
                 self.menu_quit_item.setTitle_(self._i18n_or_default('menu.quit', 'Quit'))
         except Exception:
@@ -1721,6 +1703,23 @@ class AppDelegate(NSObject):
     # Handle the 'Set Trigger' menu item click.
     def setTrigger_(self, sender):
         set_custom_launcher_trigger(self)
+
+    # Settings window
+    def showSettings_(self, sender):
+        try:
+            if not hasattr(self, '_settings_window') or self._settings_window is None:
+                from .components.settings_window import SettingsWindow
+                self._settings_window = SettingsWindow.alloc().initWithAppDelegate_(self)
+            self._settings_window.show()
+        except Exception as e:
+            print(f"WARNING: 无法打开设置窗口: {e}")
+
+    # Refresh hint when menu opens (hotkey may have changed)
+    def menuWillOpen_(self, menu):
+        try:
+            self._refresh_status_menu_titles()
+        except Exception:
+            pass
 
     # For capturing key commands while the key window (in focus).
     def keyDown_(self, event):

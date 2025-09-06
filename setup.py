@@ -26,7 +26,7 @@ OPTIONS = {
 
 setup(
     name="bubblebot",
-    version="0.0.1",
+    version="0.1.0",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     # Ensure non-Python assets (icons) are bundled
@@ -35,6 +35,7 @@ setup(
             "logo/*",
             "logo/icon.iconset/*",
             "i18n/*.json",
+            "about/*.txt",
         ]
     },
     include_package_data=True,
