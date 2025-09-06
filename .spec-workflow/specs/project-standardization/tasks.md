@@ -69,7 +69,7 @@
   - 当前快捷键格式化为人类可读，并在设置变更时刷新提示项。
   - Purpose: 可用性。
 
-- [ ] 5.1 测试：i18n 与设置
+- [x] 5.1 测试：i18n 与设置
   - Files: tests/test_i18n.py (new), tests/test_settings.py (new)
   - 覆盖：系统语言默认、t() 回退、设置保存语言/开机启动/快捷键（Darwin mock/跳过）、状态栏提示刷新。
   - Purpose: 可靠性。

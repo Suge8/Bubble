@@ -110,6 +110,27 @@ class VercelButton(NSButton):
         except Exception:
             pass
 
+    def setTitle_(self, title):
+        # Ensure white title on dark style even after localization resets the title
+        try:
+            objc.super(VercelButton, self).setTitle_(title)
+            from AppKit import NSForegroundColorAttributeName
+            if getattr(self, '_dark_style', False):
+                color = NSColor.whiteColor()
+            else:
+                try:
+                    color = NSColor.labelColor()
+                except Exception:
+                    color = NSColor.blackColor()
+            attr = {NSForegroundColorAttributeName: color}
+            self.setAttributedTitle_(NSAttributedString.alloc().initWithString_attributes_(title or "", attr))
+        except Exception:
+            try:
+                objc.super(VercelButton, self).setTitle_(title)
+            except Exception:
+                pass
+        return None
+
     def updateTrackingAreas(self):
         try:
             if self._tracking_area is not None:
@@ -480,12 +501,29 @@ class SettingsWindow(NSObject):
             self.launch_checkbox.setTitle_(_t('settings.launchAtLogin'))
         if self.hotkey_label:
             self.hotkey_label.setStringValue_(_t('settings.hotkey'))
+        if self.hotkey_button:
+            try:
+                self.hotkey_button.setStyleDark_(True)
+            except Exception:
+                pass
         if self.clear_cache_button:
             self.clear_cache_button.setTitle_(_t('settings.clearCache'))
+            try:
+                self.clear_cache_button.setStyleDark_(True)
+            except Exception:
+                pass
         if self.save_button:
             self.save_button.setTitle_(_t('button.save'))
+            try:
+                self.save_button.setStyleDark_(True)
+            except Exception:
+                pass
         if self.cancel_button:
             self.cancel_button.setTitle_(_t('button.cancel'))
+            try:
+                self.cancel_button.setStyleDark_(True)
+            except Exception:
+                pass
         if self.header_title_label:
             self.header_title_label.setStringValue_(_t('settings.title'))
         # Update header logo for current appearance
@@ -741,8 +779,10 @@ class SettingsWindow(NSObject):
             content = self.card if hasattr(self, 'card') and self.card else self.window.contentView()
             bounds = content.bounds()
             tw, th = 260, 36
-            tx = (bounds.size.width - tw) / 2
-            ty = bounds.size.height - 120
+            # Top-right corner toast
+            margin = 16
+            tx = max(margin, bounds.size.width - tw - margin)
+            ty = max(margin, bounds.size.height - th - margin)
             toast = NSView.alloc().initWithFrame_(NSMakeRect(tx, ty, tw, th))
             toast.setWantsLayer_(True)
             # Black translucent background with rounded corners

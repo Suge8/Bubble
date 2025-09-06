@@ -28,6 +28,7 @@ from AppKit import (
     NSVisualEffectStateActive,
     NSVisualEffectBlendingModeBehindWindow,
 )
+from AppKit import NSWindowAbove
 import objc
 from Quartz import (
     CGEventCreateKeyboardEvent,
@@ -97,11 +98,24 @@ def set_custom_launcher_trigger(app, target_window=None):
     from .i18n import t as _t
     if target_window is None:
         app.showWindow_(None)
+    try:
+        # Ensure the app is frontmost and target window is key
+        NSApp.activateIgnoringOtherApps_(True)
+        if target_window is not None:
+            target_window.makeKeyAndOrderFront_(None)
+    except Exception:
+        pass
     print("Setting new BubbleBot launch shortcut. (Press keys or click Cancel)", flush=True)
 
-    # Get the content view bounds
+    # Get the content view bounds (fallback to main window if target bounds look invalid)
     content_view = (target_window.contentView() if target_window is not None else app.window.contentView())
     content_bounds = content_view.bounds()
+    try:
+        if content_bounds.size.width < 50 or content_bounds.size.height < 50:
+            content_view = app.window.contentView()
+            content_bounds = content_view.bounds()
+    except Exception:
+        pass
 
     # Overlay dim layer (black alpha) + optional blur underlay
     overlay_view = NSView.alloc().initWithFrame_(content_bounds)
@@ -214,7 +228,10 @@ def set_custom_launcher_trigger(app, target_window=None):
     # Assemble
     card.addSubview_(title); card.addSubview_(subtitle); card.addSubview_(pill); card.addSubview_(cancel)
     overlay_view.addSubview_(card)
-    content_view.addSubview_(overlay_view)
+    try:
+        content_view.addSubview_positioned_relativeTo_(overlay_view, NSWindowAbove, None)
+    except Exception:
+        content_view.addSubview_(overlay_view)
     try:
         if target_window is not None:
             target_window.makeKeyAndOrderFront_(None)
@@ -239,6 +256,7 @@ def set_custom_launcher_trigger(app, target_window=None):
     except Exception:
         overlay_view.setAlphaValue_(1.0)
         card.setAlphaValue_(1.0)
+    print("DEBUG: Hotkey overlay shown", flush=True)
 
     # Handler for new trigger
     def custom_handle_new_trigger(event, flags, keycode):
