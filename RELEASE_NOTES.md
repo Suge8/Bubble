@@ -1,3 +1,20 @@
+Bubble 0.3.0 — 多语言 README 与构建改进（2025-09-07）
+
+亮点概览
+- README 全面改版：中文优先，顶部语言切换（中/英/日/韩/法），新增 Releases 直达下载入口。
+- 支持模型清单清晰：OpenAI、Claude、Grok、Gemini、Perplexity、Qwen、DeepSeek、Mistral、Kimi、ZAI。
+
+改进与修复
+- 架构说明更清晰：HomepageManager / NavigationController / MultiWindowManager 概览与本地配置路径说明。
+- 构建稳定性：修复 py2app 图标路径缺失导致的失败（iconfile 存在性检测）。
+- 打包资源：修正 MANIFEST.in 路径，减少打包警告；新增打包脚本根据版本输出 Bubble-v<version>.zip + SHA256。
+
+升级指引
+- 前往 Releases 下载最新压缩包，解压后将 Bubble.app 拖入「应用程序」。
+- 首次启动按引导授予麦克风与辅助功能权限；可用 `python -m bubble.main --check-permissions` 预检查。
+
+—
+
 Bubble 0.2.2 — 后台页面并行与无缝切换（重磅更新）
 
 亮点概览

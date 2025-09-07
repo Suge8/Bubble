@@ -14,7 +14,17 @@ APP_NAME="Bubble"
 DIST_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$ROOT_DIR/build"
 APP_PATH="$DIST_DIR/${APP_NAME}.app"
-ZIP_PATH="$DIST_DIR/${APP_NAME}-v0.1.0.zip"
+# Read version from pyproject.toml (fallback to 0.0.0)
+VERSION=$(python3 - << 'PY'
+import sys, tomllib
+try:
+    with open('pyproject.toml','rb') as f:
+        print(tomllib.load(f)['project']['version'])
+except Exception:
+    print('0.0.0')
+PY
+)
+ZIP_PATH="$DIST_DIR/${APP_NAME}-v${VERSION}.zip"
 
 CLEAN=1
 INSTALL_DEPS=0
@@ -69,4 +79,3 @@ if [[ "$SMOKE" == "1" ]]; then
 fi
 
 echo "[*] Done."
-
