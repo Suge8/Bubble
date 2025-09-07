@@ -29,6 +29,9 @@ _ffi = _detect_libffi()
 if _ffi:
     _extra_frameworks.append(_ffi)
 
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+_ICON = os.path.join(_ROOT, "src", "bubble", "logo", "icon.icns")
+
 OPTIONS = {
     # Bundle your package directory so imports “just work”
     "packages": ["bubble"],
@@ -47,8 +50,8 @@ OPTIONS = {
     ],
     # GUI app (no console window)
     "argv_emulation": False,
-    # Optional: your .icns icon
-    "iconfile": "src/bubble/logo/icon.icns",
+    # Optional: your .icns icon (only if present)
+    **({"iconfile": _ICON} if os.path.exists(_ICON) else {}),
     # Allow microphone & Accessibility prompts by embedding Info.plist keys:
     "plist": {
         "CFBundleName": "Bubble",
