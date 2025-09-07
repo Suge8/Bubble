@@ -461,24 +461,22 @@ class HomepageManager(NSObject):
             <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1\">
             <title>Bubble</title>
             <style>
-                :root {{ --bg:#fafafa; --card:#fff; --border:#eaeaea; --text:#111; --muted:#666; --accent:#111; --radius:12px; }}
+                :root {{ --bg:#fafafa; --card:#fff; --border:#eaeaea; --text:#111; --muted:#666; --accent:#111; --radius:12px; --rightW:40px; }}
                 * {{ box-sizing: border-box; }}
                 body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); overflow-x:hidden; }}
                 /* 容器宽度：随窗口增大而增宽，左右边距始终相等；最小=360+28，最大≈860 */
                 .list {{ width: clamp(388px, calc(100% - 28px), 888px); margin:0 auto; display:flex; flex-direction:column; gap:10px; }}
                 /* 卡片占满容器宽度，限定最小高度；高度/内边距随窗口高度线性放大（无阈值跳变） */
-                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:12px; padding: calc(12px * var(--vhScale, 1)) 14px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:100%; margin:0 auto; min-height: calc(48px * var(--vhScale, 1)); will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; box-sizing:border-box; }}
+                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:flex-start; background:var(--card); border:1px solid var(--border); border-radius:12px; padding: calc(12px * var(--vhScale, 1)) 14px; padding-right: calc(14px + var(--rightW)); cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:100%; margin:0 auto; min-height: calc(48px * var(--vhScale, 1)); will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; box-sizing:border-box; }}
                 .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); }}
                 .hrow.active {{ border-color:#111; box-shadow:0 0 0 2px rgba(17,17,17,.18); }}
                 .hrow .title {{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:10px; flex:1; min-width:0; }}
                 .hrow .title .icon {{ width:16px; height:16px; border-radius:4px; object-fit:cover; }}
                 .hrow .title .name {{ display:inline-block; max-width:46%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
                 .hrow .title .desc {{ margin-left:10px; font-weight:500; font-size:12px; color:#6b7280; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; text-align:center; }}
-                .hrow .right {{ display:flex; align-items:center; gap:2px; justify-content:flex-end; flex:0 0 44px; overflow:hidden; }}
-                .hrow .more {{ width:14px; height:14px; }}
-                .hrow .bubble {{ min-width:12px; height:12px; font-size:8px; padding:0 4px; }}
-                .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:13px; line-height:1; }}
-                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:12px; height:12px; padding:0 4px; border-radius:999px; background:#111; color:#fff; font-size:8px; }}
+                .hrow .right {{ position:absolute; right:14px; top:50%; transform:translateY(-50%); width:var(--rightW); display:flex; align-items:center; gap:2px; justify-content:flex-end; overflow:hidden; }}
+                .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:12px; height:12px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:12px; line-height:1; }}
+                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:10px; height:10px; padding:0 3px; border-radius:999px; background:#111; color:#fff; font-size:7px; }}
                 .hidden {{ visibility:hidden; opacity:0; }}
                 .ripple {{ position:absolute; border-radius:50%; transform:scale(0); background:rgba(0,0,0,.12); animation:ripple .45s ease-out; pointer-events:none; }}
                 @keyframes ripple {{ to {{ transform:scale(1); opacity:0; }} }}
