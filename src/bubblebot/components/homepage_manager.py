@@ -466,19 +466,19 @@ class HomepageManager(NSObject):
                 body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); overflow-x:hidden; }}
                 /* 容器宽度：随窗口增大而增宽，左右边距始终相等；最小=360+28，最大≈860 */
                 .list {{ width: clamp(388px, calc(100% - 28px), 888px); margin:0 auto; display:flex; flex-direction:column; gap:10px; }}
-                /* 卡片占满容器宽度，限定最小高度，随窗口高度更明显增高 */
-                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:12px; padding: clamp(12px, 1.4vh, 16px) 14px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:100%; margin:0 auto; min-height: clamp(48px, 6vh, 96px); will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; box-sizing:border-box; }}
+                /* 卡片占满容器宽度，限定最小高度；高度/内边距随窗口高度线性放大（无阈值跳变） */
+                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:12px; padding: calc(12px * var(--vhScale, 1)) 14px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:100%; margin:0 auto; min-height: calc(48px * var(--vhScale, 1)); will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; box-sizing:border-box; }}
                 .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); }}
                 .hrow.active {{ border-color:#111; box-shadow:0 0 0 2px rgba(17,17,17,.18); }}
                 .hrow .title {{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:10px; flex:1; min-width:0; }}
-                .hrow .title .icon {{ width:18px; height:18px; border-radius:4px; object-fit:cover; }}
-                .hrow .title .name {{ display:inline-block; max-width:54%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+                .hrow .title .icon {{ width:16px; height:16px; border-radius:4px; object-fit:cover; }}
+                .hrow .title .name {{ display:inline-block; max-width:50%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
                 .hrow .title .desc {{ margin-left:10px; font-weight:500; font-size:12px; color:#6b7280; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; text-align:center; }}
-                .hrow .right {{ display:flex; align-items:center; gap:4px; justify-content:flex-end; flex:0 0 auto; }}
-                .hrow .more {{ width:18px; height:18px; }}
-                .hrow .bubble {{ min-width:14px; height:14px; font-size:9px; }}
-                .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:14px; line-height:1; }}
-                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:#111; color:#fff; font-size:11px; }}
+                .hrow .right {{ display:flex; align-items:center; gap:2px; justify-content:flex-end; flex:0 0 auto; }}
+                .hrow .more {{ width:16px; height:16px; }}
+                .hrow .bubble {{ min-width:12px; height:12px; font-size:8px; padding:0 4px; }}
+                .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:13px; line-height:1; }}
+                .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:12px; height:12px; padding:0 4px; border-radius:999px; background:#111; color:#fff; font-size:8px; }}
                 .hidden {{ visibility:hidden; opacity:0; }}
                 .ripple {{ position:absolute; border-radius:50%; transform:scale(0); background:rgba(0,0,0,.12); animation:ripple .45s ease-out; pointer-events:none; }}
                 @keyframes ripple {{ to {{ transform:scale(1); opacity:0; }} }}
@@ -505,6 +505,23 @@ class HomepageManager(NSObject):
         """
         html += """
             <script>
+                // 让卡片高度随窗口高度线性缩放（无阈值跳变）
+                (function(){
+                    const root = document.documentElement;
+                    if (!root.style.getPropertyValue('--vhBase')) {
+                        root.style.setProperty('--vhBase', String(window.innerHeight||600));
+                    }
+                    function applyScale(){
+                        var base = parseFloat(getComputedStyle(root).getPropertyValue('--vhBase')) || (window.innerHeight||600);
+                        var s = (window.innerHeight||base) / base;
+                        if (!isFinite(s) || s <= 0) s = 1;
+                        // 限制最大放大倍数，避免过高造成滚动
+                        s = Math.max(1, Math.min(1.6, s));
+                        root.style.setProperty('--vhScale', s.toFixed(4));
+                    }
+                    applyScale();
+                    window.addEventListener('resize', applyScale, {passive:true});
+                })();
                 const $ = (s, r=document)=>r.querySelector(s);
                 const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
                 const post = (obj)=>{ if (window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.aiAction) window.webkit.messageHandlers.aiAction.postMessage(obj); };
