@@ -449,7 +449,7 @@ class HomepageManager(NSObject):
             icon_html = f"<img class=\"icon\" src=\"{icon_src}\" alt=\"\">" if icon_src else ""
             rows += f"""
             <div class=\"hrow{' active' if is_on else ''}\" data-pid=\"{pid}\" data-windows='{_json.dumps(wl)}'>
-              <div class=\"title\">{icon_html} <span class=\"name\">{title_txt}</span><span class=\"desc\">{sub_txt}</span></div>
+              <div class=\"title\">{icon_html}<span class=\"name\">{title_txt}</span><span class=\"desc\">{sub_txt}</span></div>
               <div class=\"right\">{bubble}{more_btn}</div>
             </div>
             """
@@ -463,16 +463,18 @@ class HomepageManager(NSObject):
             <style>
                 :root {{ --bg:#fafafa; --card:#fff; --border:#eaeaea; --text:#111; --muted:#666; --accent:#111; --radius:12px; }}
                 * {{ box-sizing: border-box; }}
-                body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); }}
-                .list {{ max-width:740px; margin:0 auto; display:flex; flex-direction:column; gap:8px; }}
-                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 12px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:min(70%, 560px); margin:0 auto; min-height:40px; will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; }}
+                body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); overflow-x:hidden; }}
+                .list {{ max-width:820px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }}
+                /* 更大且自适应的卡片：宽度按窗口百分比缩放并在范围内钳制 */
+                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:clamp(360px, 86%, 720px); margin:0 auto; min-height:48px; will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; }}
                 .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); }}
                 .hrow.active {{ border-color:#111; box-shadow:0 0 0 2px rgba(17,17,17,.18); }}
-                .hrow .title {{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; flex:1; min-width:0; }}
-                .hrow .title .icon {{ width:18px; height:18px; border-radius:4px; object-fit:cover; }}
-                .hrow .title .name {{ display:inline-block; max-width:40%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+                .hrow .title {{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:10px; flex:1; min-width:0; }}
+                .hrow .title .icon {{ width:20px; height:20px; border-radius:5px; object-fit:cover; }}
+                .hrow .title .name {{ display:inline-block; max-width:64%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
                 .hrow .title .desc {{ margin-left:10px; font-weight:500; font-size:12px; color:#6b7280; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; text-align:center; }}
-                .hrow .right {{ display:flex; align-items:center; gap:8px; width:56px; justify-content:flex-end; }}
+                @media (max-width: 480px) {{ .hrow .title .desc {{ display:none; }} }}
+                .hrow .right {{ display:flex; align-items:center; gap:10px; width:64px; justify-content:flex-end; }}
                 .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:14px; line-height:1; }}
                 .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:#111; color:#fff; font-size:11px; }}
                 .hidden {{ visibility:hidden; opacity:0; }}

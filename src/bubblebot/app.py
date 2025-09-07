@@ -1278,10 +1278,10 @@ class AppDelegate(NSObject):
         # Set a custom user agent
         safari_user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         self.webview.setCustomUserAgent_(safari_user_agent)
-        # 设置窗口属性：使用不透明窗口，避免透明链路导致的白屏
-        self.window.setOpaque_(True)
+        # 设置窗口属性：窗口本身透明，圆角由根视图绘制
         try:
-            self.window.setBackgroundColor_(NSColor.windowBackgroundColor())
+            self.window.setOpaque_(False)
+            self.window.setBackgroundColor_(NSColor.clearColor())
         except Exception:
             pass
         self.window.setHasShadow_(True)
@@ -1291,7 +1291,7 @@ class AppDelegate(NSObject):
             self.window.setMinSize_(NSSize(360, 640))
         except Exception:
             pass
-        print("DEBUG: 窗口设为不透明并使用系统背景色")
+        print("DEBUG: 窗口设为透明+根视图圆角背景")
         # Prevent overlay from appearing in screenshots or screen recordings
         self.window.setSharingType_(NSWindowSharingNone)
 
