@@ -472,10 +472,10 @@ class HomepageManager(NSObject):
                 .hrow.active {{ border-color:#111; box-shadow:0 0 0 2px rgba(17,17,17,.18); }}
                 .hrow .title {{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:10px; flex:1; min-width:0; }}
                 .hrow .title .icon {{ width:16px; height:16px; border-radius:4px; object-fit:cover; }}
-                .hrow .title .name {{ display:inline-block; max-width:50%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+                .hrow .title .name {{ display:inline-block; max-width:46%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
                 .hrow .title .desc {{ margin-left:10px; font-weight:500; font-size:12px; color:#6b7280; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; text-align:center; }}
-                .hrow .right {{ display:flex; align-items:center; gap:2px; justify-content:flex-end; flex:0 0 auto; }}
-                .hrow .more {{ width:16px; height:16px; }}
+                .hrow .right {{ display:flex; align-items:center; gap:2px; justify-content:flex-end; flex:0 0 44px; overflow:hidden; }}
+                .hrow .more {{ width:14px; height:14px; }}
                 .hrow .bubble {{ min-width:12px; height:12px; font-size:8px; padding:0 4px; }}
                 .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:13px; line-height:1; }}
                 .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:12px; height:12px; padding:0 4px; border-radius:999px; background:#111; color:#fff; font-size:8px; }}
@@ -515,8 +515,8 @@ class HomepageManager(NSObject):
                         var base = parseFloat(getComputedStyle(root).getPropertyValue('--vhBase')) || (window.innerHeight||600);
                         var s = (window.innerHeight||base) / base;
                         if (!isFinite(s) || s <= 0) s = 1;
-                        // 限制最大放大倍数，避免过高造成滚动
-                        s = Math.max(1, Math.min(1.6, s));
+                        // 限制最大放大倍数（更大：1.8），避免过高造成滚动
+                        s = Math.max(1, Math.min(1.8, s));
                         root.style.setProperty('--vhScale', s.toFixed(4));
                     }
                     applyScale();
@@ -566,8 +566,10 @@ class HomepageManager(NSObject):
                             try {
                                 const b = row.querySelector('.bubble');
                                 if (b) {
-                                    const n = Math.max(0, parseInt(b.textContent||'0', 10));
-                                    b.textContent = String(n + 1);
+                                    const raw = (b.textContent||'0').trim();
+                                    const cur = raw.endsWith('+') ? 9 : Math.max(0, parseInt(raw||'0', 10));
+                                    const next = cur + 1;
+                                    b.textContent = next > 9 ? '9+' : String(next);
                                     b.classList.remove('hidden');
                                 }
                             } catch(_e){}

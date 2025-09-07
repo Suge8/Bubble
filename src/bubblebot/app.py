@@ -477,7 +477,8 @@ class AppDelegate(NSObject):
             # 之后减少到 <=5 再次跨过 >5 时再次提示。
             if int(old) <= 4 and int(new) > 4:
                 msg = self._i18n_or_default('toast.tooManyPages', '页面较多可能占用内存导致卡顿')
-                self._inline_toast(msg, duration=3.0)
+                # 通过公共 API，便于测试 monkeypatch 捕获
+                self.show_toast(msg, duration=3.0)
             try:
                 print(f"DEBUG: page_threshold_check old={old} new={new} trigger={int(old)<=4 and int(new)>4}")
             except Exception:
@@ -3660,13 +3661,14 @@ class AppDelegate(NSObject):
         import json as _json
         js_data = _json.dumps(idx_items)
         count = len(idx_items)
+        display_count = ("9+" if count > 9 else str(count))
         js = f"""
             (function(){{
                 const row = document.querySelector('.hrow[data-pid=\"{platform_id}\"]');
                 if (!row) return;
                 row.dataset.windows = '{js_data.replace("'", "\\'")}';
                 const b = row.querySelector('.bubble');
-                if (b) {{ b.textContent = String({count}); if ({count} > 0) b.classList.remove('hidden'); else b.classList.add('hidden'); }}
+                if (b) {{ b.textContent = '{display_count}'; if ({count} > 0) b.classList.remove('hidden'); else b.classList.add('hidden'); }}
                 const btn = row.querySelector('button.more');
                 if (btn) btn.classList.toggle('hidden', !row.classList.contains('active'));
             }})();
