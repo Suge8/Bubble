@@ -6,11 +6,9 @@ import ctypes.util
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 _SCRIPT = os.path.join(_ROOT, "Bubble.py")
 
-# Ensure an app entry script exists for py2app even if repository layout differs
-if not os.path.exists(_SCRIPT):
-    os.makedirs(os.path.join(_ROOT, "build"), exist_ok=True)
-    _SCRIPT = os.path.join(_ROOT, "build", "py2app_launcher.py")
-    with open(_SCRIPT, "w", encoding="utf-8") as f:
+def _write_launcher(path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         f.write(
             """
 import os, sys
@@ -21,14 +19,22 @@ try:
     if os.path.isdir(src_path) and src_path not in sys.path:
         sys.path.insert(0, src_path)
     from bubble.main import main
-except Exception as e:
-    # Fallback: try regular import if installed layout
+except Exception:
     from bubble.main import main  # type: ignore
 
 if __name__ == "__main__":
     main()
 """.strip()
         )
+
+# Force fallback launcher in CI to avoid path assumptions
+_force_fallback = os.environ.get("BUBBLE_FORCE_FALLBACK_LAUNCHER") == "1" or \
+                   os.environ.get("GITHUB_ACTIONS") == "true" or \
+                   os.environ.get("CI") is not None
+
+if _force_fallback or not os.path.exists(_SCRIPT):
+    _SCRIPT = os.path.join(_ROOT, "build", "Bubble.py")
+    _write_launcher(_SCRIPT)
 
 APP = [_SCRIPT]
 DATA_FILES = []

@@ -19,6 +19,8 @@ jobs:
           python -m pip install --upgrade pip wheel setuptools packaging
           python -m pip install -r requirements.txt
       - name: Build app
+        env:
+          BUBBLE_FORCE_FALLBACK_LAUNCHER: "1"
         run: |
           python setup.py py2app -q
       - name: Zip artifact
@@ -38,4 +40,3 @@ PY
             dist/Bubble-v*.zip.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
