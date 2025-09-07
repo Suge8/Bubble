@@ -94,9 +94,16 @@ OPTIONS = {
 setup(
     name="bubble",
     version="0.3.3",
-    # Only include our app packages (exclude historical 'bubblebot')
-    packages=find_packages(where="src", include=["bubble", "bubble.*"]),
-    package_dir={"": "src"},
+    # Explicit package list (robust on CI; ignores any sibling packages)
+    packages=[
+        "bubble",
+        "bubble.components",
+        "bubble.components.utils",
+        "bubble.i18n",
+        "bubble.models",
+        "bubble.utils",
+    ],
+    package_dir={"bubble": "src/bubble"},
     # Ensure non-Python assets (icons) are bundled
     package_data={
         "bubble": [
