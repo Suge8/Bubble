@@ -48,7 +48,7 @@
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-python Bubble.py
+python3 Bubble.py  # 可选: BB_DEBUG=1 打印关键日志
 ```
 
 打包构建（macOS）：
@@ -56,6 +56,7 @@ python Bubble.py
 ```bash
 python setup.py py2app
 open dist/Bubble.app
+提示：打包版会忽略 Ctrl+C（SIGINT），避免从终端运行时误触退出；源码开发环境下，交互式终端的 Ctrl+C 会正常退出。
 ```
 
 ---
@@ -80,7 +81,8 @@ Download latest: https://github.com/Suge8/Bubble/releases/latest
 
 Key features: floating window, global hotkey (⌘+G), voice input, meeting-aware auto-hide, local-only config. Providers: OpenAI, Claude, Grok, Gemini, Perplexity, Qwen, DeepSeek, Mistral, Kimi, ZAI.
 
-Developers (short): create venv, `pip install -e ".[dev]"`, run with `python Bubble.py`; build with `python setup.py py2app` and open `dist/Bubble.app`.
+Developers (short): create venv, `pip install -e ".[dev]"`, run with `python3 Bubble.py`; build with `python setup.py py2app` and open `dist/Bubble.app`.
+New in Settings: Switch Hotkey (cycle windows/pages) and Sleep Time (minutes). Clear Cache is moved to the right of the same row.
 
 ---
 
