@@ -1,2 +1,0 @@
-{"type":"_aim","source":"mcp-knowledge-graph"}
-{"type":"entity","entityType":"guideline","name":"Project_Guidelines","observations":["全局规则：在开发过程中，如遇需要记住的项目关键点，主动增添或修改项目内的 .aim 文件以帮助协作与迭代（优先使用 project 位置存储）。","User preference: Proactively maintain in-repo .aim memory for key project points throughout development."]}

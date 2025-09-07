@@ -1,0 +1,49 @@
+name: Release macOS App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build .app via py2app
+        run: |
+          python setup.py py2app -q
+
+      - name: Zip app bundle
+        id: zip
+        run: |
+          VER=${GITHUB_REF_NAME#v}
+          ZIP="Bubble-${VER}-macOS.zip"
+          cd dist
+          /usr/bin/zip -ry "${ZIP}" Bubble.app
+          echo "zip_name=${ZIP}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Bubble ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            dist/${{ steps.zip.outputs.zip_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
