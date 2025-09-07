@@ -1,0 +1,41 @@
+name: release-macos
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip wheel setuptools packaging
+          python -m pip install -r requirements.txt
+      - name: Build app
+        run: |
+          python setup.py py2app -q
+      - name: Zip artifact
+        run: |
+          vers=$(python - <<'PY'
+import tomllib
+print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])
+PY
+          )
+          ditto -c -k --sequesterRsrc --keepParent dist/Bubble.app "dist/Bubble-v${vers}.zip"
+          shasum -a 256 "dist/Bubble-v${vers}.zip" | awk '{print $1}' > "dist/Bubble-v${vers}.zip.sha256"
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Bubble-v*.zip
+            dist/Bubble-v*.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

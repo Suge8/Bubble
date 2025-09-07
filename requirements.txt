@@ -2,3 +2,4 @@ pyobjc
 pyobjc-framework-WebKit
 setuptools
 py2app ; platform_system == "Darwin"
+packaging>=24.2
