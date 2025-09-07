@@ -638,9 +638,9 @@ class AppDelegate(NSObject):
         for parent in parents:
             try:
                 bounds = parent.bounds()
-                h = 28.0
-                pad = 8.0
-                icon_sz = 14.0
+                h = 32.0
+                pad = 10.0
+                icon_sz = 16.0
                 # 先创建 label 以估算宽度
                 lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
                 lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
@@ -659,9 +659,9 @@ class AppDelegate(NSObject):
                     pass
                 lw = 100.0
                 try:
-                    lw = max(10.0, min(200.0, float(lbl.frame().size.width)))
+                    lw = max(10.0, min(240.0, float(lbl.frame().size.width)))
                 except Exception:
-                    lw = 120.0
+                    lw = 140.0
                 w = icon_sz + 6.0 + lw + pad * 2
                 # 右上角定位；如是顶栏（drag_area/top_bar）则垂直居中
                 is_drag = parent.__class__.__name__.endswith('MultiWindowDragArea') or parent.__class__.__name__.endswith('TopBarView')
@@ -732,7 +732,7 @@ class AppDelegate(NSObject):
                     except Exception:
                         pass
                     try:
-                        lbl2.setFont_(NSFont.systemFontOfSize_(12))
+                        lbl2.setFont_(NSFont.systemFontOfSize_(13))
                     except Exception:
                         pass
                     lbl2.setStringValue_(str(text) if text is not None else "")
@@ -1159,7 +1159,9 @@ class AppDelegate(NSObject):
         print("开始创建窗口...")
         # Create a borderless, floating, resizable window
         print("创建主窗口...")
-        window_rect = NSMakeRect(500, 200, 550, 580)
+        # 初始尺寸：更接近“竖屏手机”视觉比例，默认较窄且偏高
+        # 例如 420x780（约 9:16~9:18 的观感），更适合各平台网页
+        window_rect = NSMakeRect(500, 200, 420, 780)
         print(f"DEBUG: 窗口位置和大小: {window_rect}")
         
         # 使用标准窗口样式并隐藏系统标题栏，改为全尺寸内容视图
@@ -1283,6 +1285,12 @@ class AppDelegate(NSObject):
         except Exception:
             pass
         self.window.setHasShadow_(True)
+        # 设置最小尺寸，避免过小影响体验
+        try:
+            from AppKit import NSSize
+            self.window.setMinSize_(NSSize(360, 640))
+        except Exception:
+            pass
         print("DEBUG: 窗口设为不透明并使用系统背景色")
         # Prevent overlay from appearing in screenshots or screen recordings
         self.window.setSharingType_(NSWindowSharingNone)
@@ -2255,9 +2263,20 @@ class AppDelegate(NSObject):
                             self._batch_closing = False
                         # 关闭完成后，移除平台使其处于未启用状态
                         try:
-                            self.homepage_manager.remove_platform(platform_id)
+                            ok = bool(self.homepage_manager.remove_platform(platform_id))
+                            try:
+                                msg = self._i18n_or_default('toast.removed', '已删除') if ok else self._i18n_or_default('toast.failed', '操作失败')
+                                from AppKit import NSColor
+                                self._show_small_toast(msg, icon=('trash.fill' if ok else 'xmark.circle.fill'), color=(NSColor.systemRedColor() if ok else NSColor.systemRedColor()), duration=1.6)
+                            except Exception:
+                                pass
                         except Exception:
-                            pass
+                            try:
+                                msg = self._i18n_or_default('toast.failed', '操作失败')
+                                from AppKit import NSColor
+                                self._show_small_toast(msg, icon='xmark.circle.fill', color=NSColor.systemRedColor(), duration=1.6)
+                            except Exception:
+                                pass
                         # 无刷新更新行状态、下拉与气泡
                         self._update_homepage_platform_active(platform_id, False)
                         try:
@@ -2279,7 +2298,13 @@ class AppDelegate(NSObject):
                     return
                 if action == "addPlatform" and self.homepage_manager:
                     # 启用平台：多页面模式下首次高亮即创建第1个后台页面
-                    self.homepage_manager.add_platform(platform_id)
+                    ok_add = bool(self.homepage_manager.add_platform(platform_id))
+                    try:
+                        from AppKit import NSColor
+                        msg = self._i18n_or_default('toast.added', '已添加') if ok_add else self._i18n_or_default('toast.failed', '操作失败')
+                        self._show_small_toast(msg, icon=('checkmark.circle.fill' if ok_add else 'xmark.circle.fill'), color=(NSColor.systemGreenColor() if ok_add else NSColor.systemRedColor()), duration=1.6)
+                    except Exception:
+                        pass
                     if self.is_multiwindow_mode:
                         try:
                             # 若该平台暂无任何页面（运行时或配置中都没有），则后台创建一个
@@ -2290,7 +2315,14 @@ class AppDelegate(NSObject):
                             except Exception:
                                 config_exists = False
                             if not (runtime_exists or config_exists):
-                                self._pages_create(platform_id, background=True)
+                                wid = self._pages_create(platform_id, background=True)
+                                if wid is None:
+                                    try:
+                                        from AppKit import NSColor
+                                        msgf = self._i18n_or_default('toast.failed', '操作失败')
+                                        self._show_small_toast(msgf, icon='xmark.circle.fill', color=NSColor.systemRedColor(), duration=1.6)
+                                    except Exception:
+                                        pass
                         except Exception:
                             pass
                         # 同步主页行与下拉

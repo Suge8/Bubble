@@ -13,7 +13,8 @@ LOGO_BLACK_PATH = "logo/logo_black.png"
 FRAME_SAVE_NAME = "BubbleBotWindowFrame"
 APP_TITLE = "Bubble"
 PERMISSION_CHECK_EXIT = 1
-CORNER_RADIUS = 18.0
+# 窗口圆角（更大更柔和）
+CORNER_RADIUS = 24.0
 DRAG_AREA_HEIGHT = 30
 STATUS_ITEM_CONTEXT = 1
 
