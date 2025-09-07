@@ -464,16 +464,17 @@ class HomepageManager(NSObject):
                 :root {{ --bg:#fafafa; --card:#fff; --border:#eaeaea; --text:#111; --muted:#666; --accent:#111; --radius:12px; }}
                 * {{ box-sizing: border-box; }}
                 body {{ margin:0; padding:56px 14px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif; background:var(--bg); color:var(--text); overflow-x:hidden; }}
-                .list {{ max-width:820px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }}
-                /* 更大且自适应的卡片：宽度为父容器宽度减去左右边距，限定最小/最大 */
-                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:clamp(360px, calc(100% - 28px), 760px); margin:0 auto; min-height:48px; will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; }}
+                /* 容器宽度：随窗口增大而增宽，左右边距始终相等；最小=360+28，最大≈860 */
+                .list {{ width: clamp(388px, calc(100% - 28px), 888px); margin:0 auto; display:flex; flex-direction:column; gap:10px; }}
+                /* 卡片占满容器宽度，限定最小高度，随窗口高度略增高 */
+                .hrow {{ position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:12px; padding: clamp(12px, 1.6vh, 16px) 14px; cursor:pointer; transition: box-shadow .18s ease, border-color .18s ease; width:100%; margin:0 auto; min-height: clamp(48px, 6vh, 76px); will-change: box-shadow; backface-visibility:hidden; pointer-events:auto; }}
                 .hrow:hover {{ box-shadow:0 10px 26px rgba(0,0,0,.08); }}
                 .hrow.active {{ border-color:#111; box-shadow:0 0 0 2px rgba(17,17,17,.18); }}
                 .hrow .title {{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:10px; flex:1; min-width:0; }}
                 .hrow .title .icon {{ width:20px; height:20px; border-radius:5px; object-fit:cover; }}
                 .hrow .title .name {{ display:inline-block; max-width:58%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
                 .hrow .title .desc {{ margin-left:10px; font-weight:500; font-size:12px; color:#6b7280; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; text-align:center; }}
-                .hrow .right {{ display:flex; align-items:center; gap:10px; width:56px; justify-content:flex-end; }}
+                .hrow .right {{ display:flex; align-items:center; gap:10px; justify-content:flex-end; flex:0 0 auto; }}
                 .hrow .more {{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:14px; line-height:1; }}
                 .hrow .bubble {{ display:inline-flex; align-items:center; justify-content:center; width:auto; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:#111; color:#fff; font-size:11px; }}
                 .hidden {{ visibility:hidden; opacity:0; }}
