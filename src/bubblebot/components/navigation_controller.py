@@ -429,6 +429,9 @@ class NavigationController(NSObject):
                 self.app_delegate.brand_logo.setHidden_(self.current_page != 'homepage')
             if hasattr(self.app_delegate, 'brand_label') and self.app_delegate.brand_label:
                 self.app_delegate.brand_label.setHidden_(self.current_page != 'homepage')
+            # 顶部提示气泡（如迁移提示）仅在主页显示
+            if hasattr(self.app_delegate, 'notice_bubble_view') and self.app_delegate.notice_bubble_view:
+                self.app_delegate.notice_bubble_view.setHidden_(self.current_page != 'homepage')
         except Exception:
             pass
         

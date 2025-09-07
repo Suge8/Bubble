@@ -349,6 +349,11 @@ class AppDelegate(NSObject):
         self._pages_map = {}
         self._page_meta = {}
         self._active_page_id = None
+        # 批量关闭标记：用于一次性关闭大量页面时抑制重复 UI 刷新
+        self._batch_closing = False
+        # 批量恢复标记：启动时从配置恢复各平台页面，避免反复刷新
+        self._batch_restoring = False
+        self._restored_pages_done = False
 
         # 多窗口管理器支持
         self.multiwindow_manager = None
@@ -444,124 +449,8 @@ class AppDelegate(NSObject):
 
     # -------- Toast（页面阈值） --------
     def show_toast(self, text: str, duration: float = 3.0):
-        """在当前窗口右上角显示轻量 Toast（内联实现）。"""
-        try:
-            return self._inline_toast(text, duration)
-        except Exception:
-            pass
-        try:
-            from .components.utils.toast_manager import ToastManager
-        except Exception as e:
-            print(f"WARNING: 导入 ToastManager 失败: {e}")
-            return
-        # 选择父视图
-        parent = None
-        try:
-            if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
-                nsw = getattr(self.multiwindow_manager, 'active_ns_window', None)
-                if nsw is None:
-                    try:
-                        vals = list(getattr(self.multiwindow_manager, 'ns_windows', {}).values())
-                        nsw = vals[0] if vals else None
-                    except Exception:
-                        nsw = None
-                if nsw is not None:
-                    parent = nsw.contentView()
-        except Exception:
-            parent = None
-        if parent is None:
-            parent = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
-        if parent is None:
-            return
-        # 参考 top_bar，确保置顶
-        try:
-            rel = self.top_bar if getattr(self, 'top_bar', None) is not None else None
-        except Exception:
-            rel = None
-        try:
-            print(f"DEBUG: show_toast parent={parent} homepage={bool(getattr(self,'last_loaded_is_homepage',False))} multi={bool(getattr(self,'is_multiwindow_mode',False))}")
-        except Exception:
-            pass
-        try:
-            # 为确保可见性，首页统一采用内嵌模式（与设置页一致）。
-            # 多窗口模式优先使用 active_ns_window；只有当 parent 为空时，才尝试使用 keyWindow/任意窗口。
-            if parent is None:
-                try:
-                    from AppKit import NSApp
-                    kw = NSApp.keyWindow() if NSApp else None
-                    if kw is not None and hasattr(kw, 'contentView') and kw.contentView() is not None:
-                        parent = kw.contentView()
-                    elif NSApp and hasattr(NSApp, 'windows'):
-                        wins = list(NSApp.windows())
-                        if wins:
-                            try:
-                                parent = wins[0].contentView() or parent
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-            ToastManager.show(
-                text=str(text) if text is not None else "",
-                parent=parent,
-                duration=float(duration or 3.0),
-                relative_to=rel,
-                position='top-right',
-                use_panel=False,
-            )
-            # 兜底：在多窗口模式下，同时向活动 WKWebView 注入一个页面内 toast，确保可见
-            try:
-                if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
-                    mw = self.multiwindow_manager
-                    wid = None
-                    try:
-                        wid = mw.get_active_window_id()
-                    except Exception:
-                        wid = None
-                    wv = None
-                    try:
-                        wv = mw.webviews.get(wid) if wid and hasattr(mw, 'webviews') else None
-                    except Exception:
-                        wv = None
-                    if wv is not None:
-                        msg = str(text) if text is not None else ""
-                        # 简单转义
-                        js_msg = msg.replace('\\', r'\\').replace('"', r'\"')
-                        js = f"""
-                        (function() {{
-                          try {{
-                            var id = 'bb-toast-overlay';
-                            var el = document.getElementById(id);
-                            if (!el) {{
-                              el = document.createElement('div');
-                              el.id = id;
-                              el.style.position = 'fixed';
-                              el.style.top = '12px';
-                              el.style.right = '12px';
-                              el.style.zIndex = '2147483647';
-                              el.style.padding = '10px 14px';
-                              el.style.borderRadius = '8px';
-                              el.style.background = 'rgba(0,0,0,0.92)';
-                              el.style.color = '#fff';
-                              el.style.font = '13px -apple-system, system-ui, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif';
-                              el.style.pointerEvents = 'none';
-                              document.body.appendChild(el);
-                            }}
-                            el.textContent = "{js_msg}";
-                            el.style.opacity = '1';
-                            el.style.transition = 'opacity .18s';
-                            setTimeout(function() {{ el.style.opacity = '0'; setTimeout(function() {{ if (el && el.parentNode) el.parentNode.removeChild(el); }}, 300); }}, {int(max(1, min(10, int(duration or 3.0))))} * 1000);
-                          }} catch(e) {{ /* ignore */ }}
-                        }})();
-                        """
-                        try:
-                            wv.evaluateJavaScript_completionHandler_(js, None)
-                            print("DEBUG: injected in-webview toast")
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"WARNING: show_toast 失败: {e}")
+        """在当前窗口显示轻量 Toast（内联简易版）。"""
+        self._inline_toast(text, duration)
 
     def dismissToast_(self, timer):
         try:
@@ -577,13 +466,13 @@ class AppDelegate(NSObject):
 
     def _maybe_show_page_threshold_toast(self, old: int, new: int):
         try:
-            # 规则：当总页数首次从 <=5 跨到 >5 时提示一次；
+            # 规则：当总页数首次从 <=4 跨到 >4 时提示一次；
             # 之后减少到 <=5 再次跨过 >5 时再次提示。
-            if int(old) <= 5 and int(new) > 5:
+            if int(old) <= 4 and int(new) > 4:
                 msg = self._i18n_or_default('toast.tooManyPages', '页面较多可能占用内存导致卡顿')
                 self._inline_toast(msg, duration=3.0)
             try:
-                print(f"DEBUG: page_threshold_check old={old} new={new} trigger={int(old)<=5 and int(new)>5}")
+                print(f"DEBUG: page_threshold_check old={old} new={new} trigger={int(old)<=4 and int(new)>4}")
             except Exception:
                 pass
         except Exception:
@@ -595,77 +484,107 @@ class AppDelegate(NSObject):
 
     # 简单内联 Toast（与设置页一致）
     def _inline_toast(self, text: str, duration: float = 3.0):
-        parent = None
+        """将简易 Toast 添加到最可能可见的容器上。
+
+        策略：
+        - 多窗口：优先使用所有窗口的 drag_area（顶栏），其次 contentView。
+        - 单窗口：使用 root_view 或 window.contentView。
+        """
+        parents = []
         try:
             if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
-                nsw = getattr(self.multiwindow_manager, 'active_ns_window', None)
-                if nsw is None:
-                    try:
-                        vals = list(getattr(self.multiwindow_manager, 'ns_windows', {}).values())
-                        nsw = vals[0] if vals else None
-                    except Exception:
-                        nsw = None
-                if nsw is not None:
-                    parent = nsw.contentView()
-        except Exception:
-            parent = None
-        if parent is None:
-            parent = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
-        if parent is None:
-            return
-        try:
-            bounds = parent.bounds()
-            tw, th = 260, 36
-            margin = 16
-            tx = max(margin, bounds.size.width - tw - margin)
-            ty = max(margin, bounds.size.height - th - margin)
-            toast = NSView.alloc().initWithFrame_(NSMakeRect(tx, ty, tw, th))
-            toast.setWantsLayer_(True)
-            toast.layer().setCornerRadius_(8.0)
-            toast.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.92).CGColor())
-            lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(12, 8, tw - 24, th - 16))
-            lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
-            try:
-                lbl.setTextColor_(NSColor.whiteColor())
-            except Exception:
-                pass
-            try:
-                lbl.setFont_(NSFont.systemFontOfSize_(13))
-            except Exception:
-                pass
-            lbl.setStringValue_(str(text) if text is not None else "")
-            toast.addSubview_(lbl)
-            toast.setAlphaValue_(0.0)
-            try:
-                subs = list(parent.subviews())
-                anchor = subs[-1] if subs else None
-                if hasattr(parent, 'addSubview_positioned_relativeTo_'):
-                    parent.addSubview_positioned_relativeTo_(toast, NSWindowAbove, anchor)
-                else:
-                    parent.addSubview_(toast)
-            except Exception:
-                parent.addSubview_(toast)
-            try:
-                if os.environ.get('BB_NO_EFFECTS') != '1':
-                    NSAnimationContext.beginGrouping()
-                    NSAnimationContext.currentContext().setDuration_(0.18)
-                    toast.animator().setAlphaValue_(1.0)
-                    NSAnimationContext.endGrouping()
-                else:
-                    toast.setAlphaValue_(1.0)
-            except Exception:
-                toast.setAlphaValue_(1.0)
-            try:
-                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-                    float(duration or 3.0), self, 'dismissToast:', toast, False
-                )
-            except Exception:
+                mw = self.multiwindow_manager
+                # 1) 所有 drag_area（最上层顶栏容器）
                 try:
-                    toast.removeFromSuperview()
+                    for da in list(getattr(mw, 'drag_areas', {}).values()):
+                        if da is not None:
+                            parents.append(da)
+                except Exception:
+                    pass
+                # 2) 所有 contentView（兜底）
+                try:
+                    for w in list(getattr(mw, 'ns_windows', {}).values()):
+                        try:
+                            cv = w.contentView()
+                            if cv is not None:
+                                parents.append(cv)
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception:
             pass
+        if not parents:
+            p = self.root_view if getattr(self, 'root_view', None) is not None else (self.window.contentView() if self.window else None)
+            if p is not None:
+                parents = [p]
+        if not parents:
+            return
+        for parent in parents:
+            try:
+                bounds = parent.bounds()
+                # 在 drag_area（顶栏）上：右上角；在 contentView 上：上方居中
+                is_drag = parent.__class__.__name__.endswith('MultiWindowDragArea')
+                tw, th = (260, 36)
+                margin = 12
+                if is_drag:
+                    tx = max(margin, bounds.size.width - tw - margin)
+                    ty = (bounds.size.height - th) / 2.0
+                else:
+                    tx = (bounds.size.width - tw) / 2.0
+                    ty = max(margin, bounds.size.height - th - margin)
+                toast = NSView.alloc().initWithFrame_(NSMakeRect(tx, ty, tw, th))
+                toast.setWantsLayer_(True)
+                toast.layer().setCornerRadius_(8.0)
+                toast.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.92).CGColor())
+                lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(12, 8, tw - 24, th - 16))
+                lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
+                try:
+                    lbl.setTextColor_(NSColor.whiteColor())
+                except Exception:
+                    pass
+                try:
+                    lbl.setFont_(NSFont.systemFontOfSize_(13))
+                except Exception:
+                    pass
+                lbl.setStringValue_(str(text) if text is not None else "")
+                toast.addSubview_(lbl)
+                toast.setAlphaValue_(0.0)
+                try:
+                    subs = list(parent.subviews())
+                    anchor = subs[-1] if subs else None
+                    if hasattr(parent, 'addSubview_positioned_relativeTo_'):
+                        parent.addSubview_positioned_relativeTo_(toast, NSWindowAbove, anchor)
+                    else:
+                        parent.addSubview_(toast)
+                except Exception:
+                    parent.addSubview_(toast)
+                try:
+                    if os.environ.get('BB_NO_EFFECTS') != '1':
+                        NSAnimationContext.beginGrouping()
+                        NSAnimationContext.currentContext().setDuration_(0.18)
+                        toast.animator().setAlphaValue_(1.0)
+                        NSAnimationContext.endGrouping()
+                    else:
+                        toast.setAlphaValue_(1.0)
+                except Exception:
+                    toast.setAlphaValue_(1.0)
+                try:
+                    NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                        float(duration or 3.0), self, 'dismissToast:', toast, False
+                    )
+                except Exception:
+                    try:
+                        toast.removeFromSuperview()
+                    except Exception:
+                        pass
+                try:
+                    pos = 'drag' if is_drag else 'content'
+                    print(f"DEBUG: inline_toast added pos={pos} tx={tx} ty={ty} parent={parent}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
     # -------- One-time notice bubble (e.g., config migration) --------
     def _ensure_notice_bubble(self):
@@ -1495,6 +1414,13 @@ class AppDelegate(NSObject):
         if load_home:
             print("加载主页...")
             self._load_homepage()
+            # 启动后在后台恢复历史页面（不干扰主页）
+            try:
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    0.08, self, 'restorePagesIfAny:', None, False
+                )
+            except Exception:
+                pass
         else:
             # 启动时直接进入默认AI平台
             startup_platform = None
@@ -1523,6 +1449,13 @@ class AppDelegate(NSObject):
                 self._select_ai_item(startup_platform)
             except Exception as _e:
                 print(f"DEBUG: 启动平台加载异常: {_e}")
+            # 无论是否直接进入平台页，后台恢复历史页面
+            try:
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    0.08, self, 'restorePagesIfAny:', None, False
+                )
+            except Exception:
+                pass
         # 旧版“内存提示气泡”已移除
         # Inject JavaScript to monitor background color changes
         script = """
@@ -2052,23 +1985,19 @@ class AppDelegate(NSObject):
                 platform_id = data.get("platformId") if isinstance(data, dict) else None
                 if action == "openAI" and self.navigation_controller:
                     if self.is_multiwindow_mode:
-                        # 单窗口多页面：切换到该平台最近使用的页面，无则创建并显示
+                        # 单窗口多页面：统一走导航控制器，避免手动切换导致 UI 不同步
                         try:
-                            ordered = sorted(
-                                [(wid, meta) for wid, meta in self._page_meta.items() if meta.get('platform_id') == platform_id],
-                                key=lambda kv: kv[1].get('created_at') or 0
-                            )
-                        except Exception:
+                            # 优先最近创建/使用的一个
                             ordered = []
-                        target_id = ordered[-1][0] if ordered else None
-                        if target_id:
-                            self._pages_switch(target_id)
-                        else:
-                            wid = self._pages_create(platform_id, background=False)
-                            if wid:
-                                self._pages_switch(wid)
-                        try:
-                            self._populate_ai_selector()
+                            try:
+                                ordered = sorted(
+                                    [(wid, meta) for wid, meta in self._page_meta.items() if meta.get('platform_id') == platform_id],
+                                    key=lambda kv: kv[1].get('created_at') or 0
+                                )
+                            except Exception:
+                                ordered = []
+                            target_id = ordered[-1][0] if ordered else None
+                            self.navigation_controller.handle_ai_selector_change(platform_id, target_id)
                         except Exception:
                             pass
                         return
@@ -2124,8 +2053,37 @@ class AppDelegate(NSObject):
                         pass
                     return
                 if action == "removePlatform" and self.homepage_manager:
+                    # 取消选中平台：在多页面模式下需要关闭该平台的所有后台页面，保持下拉与实际页面同步
+                    if self.is_multiwindow_mode:
+                        try:
+                            # 批量关闭，避免重复刷新下拉
+                            self._batch_closing = True
+                            targets = [wid for wid, meta in list(self._page_meta.items()) if meta.get('platform_id') == platform_id]
+                            for wid in targets:
+                                try:
+                                    self._pages_close(wid)
+                                except Exception:
+                                    pass
+                        finally:
+                            self._batch_closing = False
+                        # 关闭完成后，移除平台使其处于未启用状态
+                        try:
+                            self.homepage_manager.remove_platform(platform_id)
+                        except Exception:
+                            pass
+                        # 无刷新更新行状态、下拉与气泡
+                        self._update_homepage_platform_active(platform_id, False)
+                        try:
+                            self._populate_ai_selector(include_home_first=True)
+                        except Exception:
+                            pass
+                        try:
+                            self._update_homepage_window_count(platform_id)
+                        except Exception:
+                            pass
+                        return
+                    # 非多页面模式：仅更新配置与 UI
                     self.homepage_manager.remove_platform(platform_id)
-                    # 无刷新更新行状态 + 下拉实时同步
                     self._update_homepage_platform_active(platform_id, False)
                     try:
                         self._set_ai_selector_to_home()
@@ -2137,9 +2095,14 @@ class AppDelegate(NSObject):
                     self.homepage_manager.add_platform(platform_id)
                     if self.is_multiwindow_mode:
                         try:
-                            # 若该平台尚无页面，则后台创建一个
-                            exists = any((meta.get('platform_id') == platform_id) for meta in self._page_meta.values())
-                            if not exists:
+                            # 若该平台暂无任何页面（运行时或配置中都没有），则后台创建一个
+                            runtime_exists = any((meta.get('platform_id') == platform_id) for meta in self._page_meta.values())
+                            config_exists = False
+                            try:
+                                config_exists = bool(self.homepage_manager.get_platform_windows(platform_id))
+                            except Exception:
+                                config_exists = False
+                            if not (runtime_exists or config_exists):
                                 self._pages_create(platform_id, background=True)
                         except Exception:
                             pass
@@ -2419,27 +2382,33 @@ class AppDelegate(NSObject):
 
         if self.is_multiwindow_mode:
             if platform_id:
-                # 单窗口多页面：实时切换到对应页面
-                if window_id and window_id in getattr(self, '_pages_map', {}):
-                    self._pages_switch(window_id)
-                    return
-                # 找到该平台已存在的页面
-                target = None
+                # 多页面模式：统一走导航控制器，确保返回键/品牌/下拉正确同步
                 try:
-                    # 选取最早创建的第一个
-                    ordered = sorted(
-                        [(wid, meta) for wid, meta in self._page_meta.items() if meta.get('platform_id') == platform_id],
-                        key=lambda kv: kv[1].get('created_at') or 0
-                    )
-                    target = ordered[0][0] if ordered else None
+                    if self.navigation_controller:
+                        self.navigation_controller.handle_ai_selector_change(platform_id, window_id)
+                    else:
+                        # 兜底：直接切换到指定/现有/新建页面
+                        if window_id and window_id in getattr(self, '_pages_map', {}):
+                            self._pages_switch(window_id)
+                        else:
+                            target = None
+                            try:
+                                ordered = sorted(
+                                    [(wid, meta) for wid, meta in self._page_meta.items() if meta.get('platform_id') == platform_id],
+                                    key=lambda kv: kv[1].get('created_at') or 0
+                                )
+                                target = ordered[0][0] if ordered else None
+                            except Exception:
+                                target = None
+                            if target:
+                                self._pages_switch(target)
+                            else:
+                                wid = self._pages_create(platform_id, background=False)
+                                if wid:
+                                    self._pages_switch(wid)
                 except Exception:
-                    target = None
-                if target:
-                    self._pages_switch(target)
-                else:
-                    wid = self._pages_create(platform_id, background=False)
-                    if wid:
-                        self._pages_switch(wid)
+                    pass
+            return
         else:
             if platform_id:
                 # 更新导航状态到聊天页并加载对应服务
@@ -2462,6 +2431,11 @@ class AppDelegate(NSObject):
     def _pages_create(self, platform_id: str, background: bool = True):
         """在同一窗口内创建一个新的 WKWebView 页面，后台加载并加入下拉。返回 window_id 或 None。"""
         try:
+            # 记录变更前页面数量（基于 _pages_map）
+            try:
+                _old_pages_count = int(len(getattr(self, '_pages_map', {})))
+            except Exception:
+                _old_pages_count = 0
             from uuid import uuid4
             wid = str(uuid4())
             cfg = WKWebViewConfiguration.alloc().init()
@@ -2522,14 +2496,131 @@ class AppDelegate(NSObject):
                 if self.homepage_manager:
                     from Foundation import NSDate as _NSDate
                     self.homepage_manager.add_platform_window(platform_id, wid, { 'createdAt': str(_NSDate.date()) })
-                self._populate_ai_selector(include_home_first=True)
-                self._update_homepage_window_count(platform_id)
+                if not getattr(self, '_batch_restoring', False):
+                    self._populate_ai_selector(include_home_first=True)
+                    self._update_homepage_window_count(platform_id)
+                    # 触发页面计数变化回调（用于阈值 toast）
+                    try:
+                        _new_pages_count = int(len(getattr(self, '_pages_map', {})))
+                    except Exception:
+                        _new_pages_count = _old_pages_count
+                    self.notify_page_count_changed(_old_pages_count, _new_pages_count)
             except Exception:
                 pass
             return wid
         except Exception as e:
             print(f"WARNING: _pages_create 失败: {e}")
             return None
+
+    def _pages_create_for_id(self, platform_id: str, window_id: str, background: bool = True):
+        """使用指定的 window_id 在当前窗口创建 WKWebView（用于从配置恢复）。"""
+        try:
+            if not platform_id or not window_id:
+                return None
+            # 已存在则跳过
+            if window_id in self._pages_map:
+                return window_id
+            # 记录变更前计数
+            try:
+                _old_pages_count = int(len(getattr(self, '_pages_map', {})))
+            except Exception:
+                _old_pages_count = 0
+            cfg = WKWebViewConfiguration.alloc().init()
+            try:
+                cfg.preferences().setJavaScriptCanOpenWindowsAutomatically_(True)
+            except Exception:
+                pass
+            wv = WKWebView.alloc().initWithFrame_configuration_(self._pages_frame(), cfg)
+            try:
+                wv.setUIDelegate_(self)
+                wv.setNavigationDelegate_(self)
+                wv.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+                wv.setAcceptsTouchEvents_(True)
+                wv.setOpaque_(True)
+                wv.setValue_forKey_(True, "drawsBackground")
+                safari_user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+                wv.setCustomUserAgent_(safari_user_agent)
+            except Exception:
+                pass
+            # 添加到 root_view（先隐藏）
+            try:
+                if hasattr(self.root_view, 'addSubview_positioned_relativeTo_') and getattr(self, 'top_bar', None) is not None:
+                    self.root_view.addSubview_positioned_relativeTo_(wv, NSWindowBelow, self.top_bar)
+                else:
+                    self.root_view.addSubview_(wv)
+                    try:
+                        if hasattr(self.root_view, 'addSubview_positioned_relativeTo_') and self.webview is not None:
+                            self.top_bar.removeFromSuperview()
+                            self.root_view.addSubview_positioned_relativeTo_(self.top_bar, NSWindowAbove, wv)
+                    except Exception:
+                        pass
+                wv.setHidden_(bool(background))
+            except Exception:
+                pass
+            # 记录与加载（不写回 HomepageManager）
+            self._pages_map[window_id] = wv
+            from Foundation import NSDate
+            try:
+                created_at = NSDate.date()
+            except Exception:
+                created_at = None
+            self._page_meta[window_id] = { 'platform_id': platform_id, 'created_at': created_at }
+            try:
+                url = self._get_platform_url(platform_id)
+                if url:
+                    nsurl = NSURL.URLWithString_(url)
+                    req = NSURLRequest.requestWithURL_(nsurl)
+                    wv.loadRequest_(req)
+            except Exception:
+                pass
+            # 变更后计数提示（恢复阶段只在非批量时提示）
+            try:
+                if not getattr(self, '_batch_restoring', False):
+                    _new_pages_count = int(len(getattr(self, '_pages_map', {})))
+                    self.notify_page_count_changed(_old_pages_count, _new_pages_count)
+            except Exception:
+                pass
+            return window_id
+        except Exception:
+            return None
+
+    def restorePagesIfAny_(self, _timer):
+        """定时器回调：从用户配置恢复历史页面到后台。"""
+        try:
+            if getattr(self, '_restored_pages_done', False):
+                return
+            if not getattr(self, 'is_multiwindow_mode', False):
+                return
+            if not getattr(self, 'homepage_manager', None):
+                return
+            all_windows = {}
+            try:
+                all_windows = self.homepage_manager.get_all_windows() or {}
+            except Exception:
+                all_windows = {}
+            if not all_windows:
+                self._restored_pages_done = True
+                return
+            # 批量恢复，避免反复刷新下拉
+            self._batch_restoring = True
+            for pid, win_map in list(all_windows.items()):
+                try:
+                    for wid in list(win_map.keys()):
+                        try:
+                            self._pages_create_for_id(pid, wid, background=True)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            self._batch_restoring = False
+            # 统一刷新一次下拉（主页包含“主页”，非主页不包含）
+            try:
+                self._populate_ai_selector(include_home_first=bool(getattr(self, 'last_loaded_is_homepage', False)))
+            except Exception:
+                pass
+            self._restored_pages_done = True
+        except Exception:
+            pass
 
     def _pages_switch(self, window_id: str) -> bool:
         try:
@@ -2568,10 +2659,36 @@ class AppDelegate(NSObject):
                 self._update_ai_selector_ui(True)
             except Exception:
                 pass
+            # 进入页面，移除下拉中的“主页”项
+            try:
+                self.last_loaded_is_homepage = False
+                # 批量操作中避免重复刷新
+                if not getattr(self, '_batch_closing', False):
+                    self._populate_ai_selector(include_home_first=False)
+            except Exception:
+                pass
             # 下拉选中该页
             try:
                 pid = self._page_meta.get(window_id, {}).get('platform_id')
-                self._select_ai_item(pid, window_id)
+                self._suppress_ai_action = True
+                try:
+                    self._select_ai_item(pid, window_id)
+                finally:
+                    self._suppress_ai_action = False
+            except Exception:
+                pass
+            # 若目标页仍在加载中，显示骨架；否则隐藏
+            try:
+                wv = self._pages_map.get(window_id)
+                loading = False
+                try:
+                    loading = bool(wv.isLoading()) if hasattr(wv, 'isLoading') else False
+                except Exception:
+                    loading = False
+                if loading:
+                    self._show_skeleton_overlay()
+                else:
+                    self._hide_skeleton_overlay()
             except Exception:
                 pass
             return True
@@ -2580,6 +2697,10 @@ class AppDelegate(NSObject):
 
     def _pages_close(self, window_id: str) -> bool:
         try:
+            try:
+                _old_pages_count = int(len(getattr(self, '_pages_map', {})))
+            except Exception:
+                _old_pages_count = 0
             meta = self._page_meta.get(window_id) or {}
             pid = meta.get('platform_id')
             wv = self._pages_map.get(window_id)
@@ -2614,13 +2735,19 @@ class AppDelegate(NSObject):
                         self._load_homepage()
                     except Exception:
                         pass
-            # 同步 UI
+            # 同步 UI（支持批量关闭时抑制重复刷新）
             try:
                 if self.homepage_manager and pid and window_id:
                     self.homepage_manager.remove_platform_window(pid, window_id)
-                self._populate_ai_selector(include_home_first=True)
-                if pid:
-                    self._update_homepage_window_count(pid)
+                if not getattr(self, '_batch_closing', False):
+                    self._populate_ai_selector(include_home_first=True)
+                    if pid:
+                        self._update_homepage_window_count(pid)
+                    try:
+                        _new_pages_count = int(len(getattr(self, '_pages_map', {})))
+                    except Exception:
+                        _new_pages_count = max(0, _old_pages_count - 1)
+                    self.notify_page_count_changed(_old_pages_count, _new_pages_count)
             except Exception:
                 pass
             return True
@@ -2743,13 +2870,32 @@ class AppDelegate(NSObject):
             except Exception:
                 pass
 
-        # 设置默认选择
+        # 设置默认选择（优先保持当前活动页/导航状态的选择）
         # 在填充期间抑制动作回调，避免误触发导航
+        desired_platform = None
+        desired_window = None
+        try:
+            if self.is_multiwindow_mode and getattr(self, '_active_page_id', None) in self._page_meta:
+                apid = self._active_page_id
+                desired_window = apid
+                desired_platform = self._page_meta.get(apid, {}).get('platform_id')
+            elif getattr(self, 'navigation_controller', None) and self.navigation_controller.current_page == 'chat':
+                desired_platform = self.navigation_controller.current_platform
+                desired_window = getattr(self.navigation_controller, 'current_window_id', None)
+        except Exception:
+            desired_platform = desired_platform or None
+            desired_window = desired_window or None
+
         self._suppress_ai_action = True
         try:
             if include_home_first and self.ai_selector.numberOfItems() > 0:
+                # 主页：优先选中“主页”项
                 self.ai_selector.selectItemAtIndex_(0)
+            elif desired_platform:
+                # 聊天页：精确选中当前活动页面
+                self._select_ai_item(desired_platform, desired_window)
             else:
+                # 兜底：按默认平台
                 self._set_default_ai_selection()
         finally:
             self._suppress_ai_action = False
@@ -3080,7 +3226,9 @@ class AppDelegate(NSObject):
                 # 一次性抑制骨架屏
                 self._skeleton_suppress_next = False
             else:
-                self._show_skeleton_overlay()
+                # 仅对当前前台可见页面显示骨架；主页不显示
+                if self._should_show_skeleton_for_webview(webView):
+                    self._show_skeleton_overlay()
         except Exception:
             pass
 
@@ -3100,7 +3248,9 @@ class AppDelegate(NSObject):
                 # 一次性抑制骨架屏
                 self._skeleton_suppress_next = False
             else:
-                self._show_skeleton_overlay()
+                # 仅对当前前台可见页面显示骨架；主页不显示
+                if self._should_show_skeleton_for_webview(webView):
+                    self._show_skeleton_overlay()
         except Exception:
             pass
     
@@ -3675,6 +3825,45 @@ class AppDelegate(NSObject):
         except Exception:
             pass
 
+    def _should_show_skeleton_for_webview(self, webView) -> bool:
+        """仅对当前前台可见内容显示骨架；主页与后台加载都不显示。"""
+        try:
+            # 主页永不显示骨架
+            if getattr(self, 'last_loaded_is_homepage', False):
+                return False
+            # 抑制标记优先
+            if getattr(self, '_skeleton_suppress_until_finish', False):
+                return False
+            if getattr(self, '_skeleton_suppress_next', False):
+                return False
+            # 多页面模式：仅当该 webView 是当前活动页面且可见
+            if getattr(self, 'is_multiwindow_mode', False):
+                apid = getattr(self, '_active_page_id', None)
+                active = self._pages_map.get(apid) if apid else None
+                if active is None:
+                    return False
+                # 避免隐藏中的页面触发骨架
+                try:
+                    if hasattr(active, 'isHidden') and active.isHidden():
+                        return False
+                except Exception:
+                    pass
+                # 仅当活动页仍在加载中
+                try:
+                    is_loading = bool(active.isLoading()) if hasattr(active, 'isLoading') else False
+                except Exception:
+                    is_loading = False
+                return webView == active and is_loading
+            # 单页面模式：仅当 webView 即主 webview 且当前不是主页
+            if webView != getattr(self, 'webview', None):
+                return False
+            try:
+                return bool(webView.isLoading()) if hasattr(webView, 'isLoading') else False
+            except Exception:
+                return False
+        except Exception:
+            return False
+
     # 处理导航变化
     def handle_navigation_change(self, page_type, platform_id=None, window_id=None):
         """处理导航状态变化"""
@@ -3692,7 +3881,41 @@ class AppDelegate(NSObject):
                 pass
             self._load_homepage()
         elif page_type == "chat" and platform_id:
-            # 进入平台页：先展示骨架，再刷新下拉移除“主页”，再加载服务，最后选中当前平台
+            # 进入平台页
+            if self.is_multiwindow_mode:
+                # 多页面模式：不显示骨架，直接切换到已有页或创建前台页
+                try:
+                    # 隐藏主页 WebView
+                    if getattr(self, 'webview', None):
+                        self.webview.setHidden_(True)
+                except Exception:
+                    pass
+                # 优先指定的 window_id；否则选取已有；否则创建
+                target = None
+                if window_id and window_id in getattr(self, '_pages_map', {}):
+                    target = window_id
+                else:
+                    try:
+                        ordered = sorted(
+                            [(wid, meta) for wid, meta in self._page_meta.items() if meta.get('platform_id') == platform_id],
+                            key=lambda kv: kv[1].get('created_at') or 0
+                        )
+                        target = ordered[0][0] if ordered else None
+                    except Exception:
+                        target = None
+                if target:
+                    self._pages_switch(target)
+                else:
+                    wid = self._pages_create(platform_id, background=False)
+                    if wid:
+                        self._pages_switch(wid)
+                # 进入页面后，下拉不包含“主页”
+                try:
+                    self._populate_ai_selector(include_home_first=False)
+                except Exception:
+                    pass
+                return
+            # 单页面模式：展示骨架并加载
             try:
                 self._show_skeleton_overlay()
             except Exception:
