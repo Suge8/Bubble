@@ -48,6 +48,8 @@ OPTIONS = {
         "wheel",
         "pkg_resources",
     ],
+    # Build arch and GUI mode
+    "arch": "universal2",
     # GUI app (no console window)
     "argv_emulation": False,
     # Optional: your .icns icon (only if present)
