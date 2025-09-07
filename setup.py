@@ -62,7 +62,7 @@ OPTIONS = {
 
 setup(
     name="bubblebot",
-    version="0.2.1",
+    version="0.2.2",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     # Ensure non-Python assets (icons) are bundled
