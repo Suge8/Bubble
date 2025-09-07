@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bubblebot"
-version = "0.2.2"
+name = "bubble"
+version = "0.3.0"
 description = "macOS智能AI助手应用，支持多窗口AI并行使用"
 authors = [
     {name = "Sai Praveen"}
@@ -29,7 +29,7 @@ packaging = [
 ]
 
 [project.scripts]
-bubblebot = "bubblebot.main:main"
+bubble = "bubble.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

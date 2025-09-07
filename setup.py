@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 import sys, os, glob
 import ctypes.util
 
-APP = ["BubbleBot.py"]
+APP = ["Bubble.py"]
 DATA_FILES = []
 def _detect_libffi():
     # Try ctypes to find the library name
@@ -31,11 +31,11 @@ if _ffi:
 
 OPTIONS = {
     # Bundle your package directory so imports “just work”
-    "packages": ["bubblebot"],
+    "packages": ["bubble"],
     # Explicitly copy image assets to app Resources for NSBundle lookups
     "resources": [
-        "src/bubblebot/logo",
-        "src/bubblebot/assets/icons",
+        "src/bubble/logo",
+        "src/bubble/assets/icons",
     ],
     "includes": [],
     # Exclude build-time tooling that can cause duplicate dist-info when collected
@@ -48,7 +48,7 @@ OPTIONS = {
     # GUI app (no console window)
     "argv_emulation": False,
     # Optional: your .icns icon
-    "iconfile": "src/bubblebot/logo/icon.icns",
+    "iconfile": "src/bubble/logo/icon.icns",
     # Allow microphone & Accessibility prompts by embedding Info.plist keys:
     "plist": {
         "CFBundleName": "Bubble",
@@ -61,13 +61,13 @@ OPTIONS = {
 }
 
 setup(
-    name="bubblebot",
-    version="0.2.2",
+    name="bubble",
+    version="0.3.0",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     # Ensure non-Python assets (icons) are bundled
     package_data={
-        "bubblebot": [
+        "bubble": [
             "logo/*",
             "logo/icon.iconset/*",
             "assets/icons/*",

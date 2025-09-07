@@ -1,99 +1,123 @@
 # 🫧 Bubble — 你的 macOS 轻量 AI 助手
 
-一键呼出、悬浮置顶、即开即用。支持 ChatGPT / Claude / Grok / Gemini / Perplexity 等多模型，隐私本地首选，无需云端托管。
-
-> 没有跟踪、没有服务端，只有高效的 AI 工作流。
+[简体中文](#zh) | [English](#en) | [日本語](#ja) | [한국어](#ko) | [Français](#fr)
 
 ---
 
-## 🚀 快速开始
+<a id="zh"></a>
 
-```bash
-git clone git@github.com:Suge8/Bubble.git
-cd Bubble
+## 🇨🇳 简体中文
 
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+一键呼出、悬浮置顶、即开即用。支持多家模型提供商（OpenAI、Claude、Grok、Gemini、Perplexity、Qwen、DeepSeek、Mistral、Kimi、ZAI…），隐私本地优先，无需服务端。
 
-# 开发运行（两种方式任意一种）
-python Bubble.py
-# 或
-python -m bubble.main
-```
+👉 立即下载：前往 Releases 获取最新安装包：https://github.com/Suge8/Bubble/releases/latest
 
-- 已安装后（可执行脚本）：命令行运行 `bubble`
+推荐你在用的第一款“轻量 AI 悬浮窗”。告别切应用复制粘贴，写作 / 阅读 / 代码 / 会议边问边用，效率直线上升。
 
----
-
-## ✨ 主要特性
+### 主要特性
 
 - 悬浮小窗：始终置顶，随时写/看/问
-- 多模型选择：一键切换常见 LLM 提供商
-- 多窗口并行：最多 5 个窗口同时对话
-- 语音输入：支持麦克风语音指令
+- 多模型切换：常见 LLM 一键切换（OpenAI/Claude/Grok/Gemini/Perplexity/Qwen/DeepSeek/Mistral/Kimi/ZAI）
+- 多窗口并行：最多 5 个窗口同时对话 / 互不打扰
+- 语音输入：支持麦克风快速语音问答
 - 全局热键：默认 ⌘ + G，可自定义
 - 会议免打扰：检测会议类 App 自动隐藏
-- 本地优先：配置存本地，不上传任何内容
+- 本地优先：配置仅存本机，不上传任何内容
+
+### 系统权限
+
+- 🎙️ 麦克风：用于语音输入
+- ⌨️ 辅助功能：用于全局热键
+
+可在「系统设置 → 隐私与安全性」管理；也可用 `python -m bubble.main --check-permissions` 预检查。
+
+### 快速开始（面向用户）
+
+1. 前往 Releases 下载最新 `Bubble.app` 压缩包并解压
+2. 将 `Bubble.app` 拖入「应用程序」
+3. 首次启动按引导授予权限，设置你常用的模型与热键
+
+喜欢就点个 Star 支持我们，让更多人发现它！
 
 ---
 
-## 🧱 架构概览
+### 面向开发者（简短）
 
-- HomepageManager：首启引导、平台启用与默认 AI，渲染 WebView 首页，引导配置
-- NavigationController：页面状态机（homepage ↔ chat），处理返回、标题与选择器联动
-- MultiWindowManager：管理最多 5 个并发窗口，几何与激活控制，按平台分组
+开发运行：
 
-用户配置默认保存在 `~/Library/Application Support/Bubble/config.json`（本地持久化）。
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+python Bubble.py
+```
 
----
-
-## 🧪 开发命令
-
-- 本地运行：`python Bubble.py` 或 `python -m bubble.main`
-- 权限检查：`python -m bubble.main --check-permissions`
-- 测试：`pytest -v --tb=short`
-- 格式化：`black src tests`
-- Lint：`flake8 src tests && pylint src/bubble`
-
----
-
-## 📦 打包应用（macOS）
+打包构建（macOS）：
 
 ```bash
 python setup.py py2app
 open dist/Bubble.app
 ```
 
-打包产物位于：`dist/Bubble.app`
+---
+
+### 目录与架构（概览）
+
+- `src/bubble/` 核心 App：
+  - 组件：HomepageManager（首启/平台/默认 AI）、NavigationController（主页 ↔ 聊天）、MultiWindowManager（最多 5 窗口）
+  - 入口/事件：`app.py`、`main.py`、`listener.py`
+  - 其它：`models/`、`i18n/`、`logo/`
+- 用户配置：`~/Library/Application Support/Bubble/config.json`
 
 ---
 
-## 🔐 权限说明
+<a id="en"></a>
 
-- 🎙️ 麦克风权限：用于语音输入
-- ⌨️ 辅助功能：用于全局热键
+## 🇺🇸 English
 
-可在「系统设置 → 隐私与安全性」中管理。也可先用 `python -m bubble.main --check-permissions` 进行快速检查。
+Bubble is a lightweight macOS AI assistant: summon with a hotkey, always-on-top mini window, multi-model switch, up to 5 concurrent chats, and privacy-first local config.
 
----
+Download latest: https://github.com/Suge8/Bubble/releases/latest
 
-## 目录结构
+Key features: floating window, global hotkey (⌘+G), voice input, meeting-aware auto-hide, local-only config. Providers: OpenAI, Claude, Grok, Gemini, Perplexity, Qwen, DeepSeek, Mistral, Kimi, ZAI.
 
-- `src/bubble/`：核心 App（GUI、热键、管理器）
-  - `app.py` / `main.py` / `listener.py`：应用入口与事件
-  - `components/`：`homepage_manager.py`、`navigation_controller.py`、`multiwindow_manager.py` 等
-  - `models/`：`platform_config.py` 等
-  - `i18n/`：多语言资源
-  - `logo/`：图标资源
-- `tests/`：Pytest 测试用例
-- 入口：`Bubble.py`（开发）/ `bubble`（安装后命令）
+Developers (short): create venv, `pip install -e ".[dev]"`, run with `python Bubble.py`; build with `python setup.py py2app` and open `dist/Bubble.app`.
 
 ---
 
-## 许可证
+<a id="ja"></a>
 
-本项目采用 MIT License。
+## 🇯🇵 日本語
+
+Bubble は軽量な macOS 用 AI アシスタントです。ホットキーで即起動、常に最前面の小さなウィンドウ、複数モデル切替、最大 5 つの同時チャット、ローカル優先でプライバシー配慮。
+
+最新版ダウンロード: https://github.com/Suge8/Bubble/releases/latest
+
+開発: 仮想環境を作成し `pip install -e ".[dev]"`、`python Bubble.py` で起動。ビルドは `python setup.py py2app`、`dist/Bubble.app` を開く。
 
 ---
 
-如果喜欢，欢迎点一个 Star 🌟
+<a id="ko"></a>
+
+## 🇰🇷 한국어
+
+Bubble은 가벼운 macOS AI 도우미입니다. 단축키로 즉시 호출, 항상 위에 떠있는 미니 창, 모델 간 빠른 전환, 최대 5개 동시 대화, 로컬 우선 개인정보 보호.
+
+최신 버전 다운로드: https://github.com/Suge8/Bubble/releases/latest
+
+개발: 가상환경 생성 후 `pip install -e ".[dev]"`, `python Bubble.py` 실행. 빌드는 `python setup.py py2app`, `dist/Bubble.app` 실행.
+
+---
+
+<a id="fr"></a>
+
+## 🇫🇷 Français
+
+Bubble est un assistant IA léger pour macOS. Fenêtre flottante en surimpression, raccourci global (⌘+G), entrée vocale, jusqu’à 5 chats simultanés, données locales en priorité.
+
+Télécharger la dernière version : https://github.com/Suge8/Bubble/releases/latest
+
+Développement (court) : créer un venv, `pip install -e ".[dev]"`, lancer `python Bubble.py`. Construire avec `python setup.py py2app`, puis ouvrir `dist/Bubble.app`.
+
+---
+
+许可证：MIT License
