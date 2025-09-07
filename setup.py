@@ -3,7 +3,34 @@ from setuptools import setup, find_packages
 import sys, os, glob
 import ctypes.util
 
-APP = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "Bubble.py")]
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+_SCRIPT = os.path.join(_ROOT, "Bubble.py")
+
+# Ensure an app entry script exists for py2app even if repository layout differs
+if not os.path.exists(_SCRIPT):
+    os.makedirs(os.path.join(_ROOT, "build"), exist_ok=True)
+    _SCRIPT = os.path.join(_ROOT, "build", "py2app_launcher.py")
+    with open(_SCRIPT, "w", encoding="utf-8") as f:
+        f.write(
+            """
+import os, sys
+try:
+    # Add ./src to sys.path (development-like layout)
+    here = os.path.dirname(__file__)
+    src_path = os.path.join(here, "src")
+    if os.path.isdir(src_path) and src_path not in sys.path:
+        sys.path.insert(0, src_path)
+    from bubble.main import main
+except Exception as e:
+    # Fallback: try regular import if installed layout
+    from bubble.main import main  # type: ignore
+
+if __name__ == "__main__":
+    main()
+""".strip()
+        )
+
+APP = [_SCRIPT]
 DATA_FILES = []
 def _detect_libffi():
     # Try ctypes to find the library name
@@ -29,7 +56,6 @@ _ffi = _detect_libffi()
 if _ffi:
     _extra_frameworks.append(_ffi)
 
-_ROOT = os.path.dirname(os.path.abspath(__file__))
 _ICON = os.path.join(_ROOT, "src", "bubble", "logo", "icon.icns")
 
 OPTIONS = {
