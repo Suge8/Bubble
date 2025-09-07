@@ -93,7 +93,7 @@ OPTIONS = {
 
 setup(
     name="bubble",
-    version="0.3.3",
+    version="0.3.4",
     # Explicit package list (robust on CI; ignores any sibling packages)
     packages=[
         "bubble",

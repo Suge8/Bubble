@@ -43,6 +43,15 @@ Bubble 0.3.3 — 稳定构建与自动发布工作流（2025-09-08）
 - 本地：`rm -rf build dist && python3 -m pip install -r requirements.txt && python3 setup.py py2app -q`，运行 `BB_DEBUG=1 "dist/Bubble.app/Contents/MacOS/Bubble"`。
 - CI：推送 tag（如 `v0.3.3`）会自动出包并创建 Release。
 
+Bubble 0.3.4 — CI 构建稳定性修复（2025-09-08）
+
+修复
+- CI 环境缺少 `Bubble.py` 导致 py2app 入口丢失：在构建时自动生成 `build/py2app_launcher.py` 兜底入口，始终从 `bubble.main:main` 启动。
+- 明确打包包列表：仅包含 `bubble` 相关包，避免历史 `bubblebot` 被误收集导致构建日志出现旧路径。
+
+提示
+- 给 tag（如 `v0.3.4`）即可自动触发 macOS 构建与发布（见 `.github/workflows/release-macos.yml`）。
+
 —
 
 Bubble 0.2.2 — 后台页面并行与无缝切换（重磅更新）
