@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 import sys, os, glob
 import ctypes.util
 
-APP = ["Bubble.py"]
+APP = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "Bubble.py")]
 DATA_FILES = []
 def _detect_libffi():
     # Try ctypes to find the library name
@@ -68,7 +68,7 @@ OPTIONS = {
 setup(
     name="bubble",
     version="0.3.2",
-    packages=find_packages(where="src"),
+    packages=find_packages(where="src", include=["bubble*"]),
     package_dir={"": "src"},
     # Ensure non-Python assets (icons) are bundled
     package_data={
