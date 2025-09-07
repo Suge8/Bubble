@@ -8,10 +8,20 @@ Bubble 0.3.0 — 多语言 README 与构建改进（2025-09-07）
 - 架构说明更清晰：HomepageManager / NavigationController / MultiWindowManager 概览与本地配置路径说明。
 - 构建稳定性：修复 py2app 图标路径缺失导致的失败（iconfile 存在性检测）。
 - 打包资源：修正 MANIFEST.in 路径，减少打包警告；新增打包脚本根据版本输出 Bubble-v<version>.zip + SHA256。
+ - 设置与性能：新增“切换页面”快捷键与“休眠时间（默认 30 分钟）”，清除缓存移动到同一行右侧；加入后台挂起策略（长时间不活动可释放资源，激活时快速恢复）；站点导航白名单与加载失败“重试”覆盖层；文档命令统一为 `python3`。
 
 升级指引
 - 前往 Releases 下载最新压缩包，解压后将 Bubble.app 拖入「应用程序」。
 - 首次启动按引导授予麦克风与辅助功能权限；可用 `python -m bubble.main --check-permissions` 预检查。
+
+Bubble 0.3.1 — 打包版启动错误修复（2025-09-08）
+
+修复
+- 解决打包版 (.app) 启动时的 PyObjC 桥接错误（BadPrototypeError/TypeError），原因是运行时签名未在打包环境正确解析。现已通过 ObjC 友好 setter 与签名修正规避，纯 Python 与打包版均可正常初始化。
+- 确保 Dock/状态栏图标从 App Bundle 的 Resources 中加载（logo/icon.icns、logo/logo_white.png、logo/logo_black.png）。
+
+说明
+- 推荐下载 v0.3.1 安装包；若从源码构建，建议先清理 build/ 与 dist/ 再构建：`rm -rf build dist && python3 setup.py py2app -O2`。
 
 —
 
