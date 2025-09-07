@@ -461,6 +461,13 @@ class AppDelegate(NSObject):
                 toast.animator().setAlphaValue_(0.0)
                 NSAnimationContext.endGrouping()
             toast.removeFromSuperview()
+            try:
+                parent = getattr(toast, '_bb_parent', None)
+                if parent is not None:
+                    cnt = int(getattr(parent, '_bb_toast_count', 1))
+                    setattr(parent, '_bb_toast_count', max(0, cnt - 1))
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -535,7 +542,7 @@ class AppDelegate(NSObject):
                     ty = max(margin, bounds.size.height - th - margin)
                 toast = NSView.alloc().initWithFrame_(NSMakeRect(tx, ty, tw, th))
                 toast.setWantsLayer_(True)
-                toast.layer().setCornerRadius_(8.0)
+                toast.layer().setCornerRadius_(12.0)
                 toast.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.92).CGColor())
                 lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(12, 8, tw - 24, th - 16))
                 lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
@@ -587,12 +594,7 @@ class AppDelegate(NSObject):
                 pass
 
     def _show_small_toast(self, text: str, icon: str = None, color: object = None, duration: float = 1.8):
-        """显示一个小号淡色圆角 toast，默认右上角，带图标。
-
-        - 在多窗口：优先顶栏 drag_area；其次 contentView。
-        - 在单窗口：优先 top_bar；其次 root_view/contentView。
-        """
-        # 选择父视图列表（优先顶栏容器）
+        """显示一个小号淡色圆角 toast，默认右上角，带图标，支持叠放。"""
         parents = []
         try:
             if bool(getattr(self, 'is_multiwindow_mode', False)) and getattr(self, 'multiwindow_manager', None):
@@ -628,12 +630,11 @@ class AppDelegate(NSObject):
         if not parents:
             return
 
-        # 样式参数
         try:
-            tint = color or NSColor.systemGreenColor()
+            from math import ceil
         except Exception:
-            tint = None
-        icon_name = icon or "checkmark.circle.fill"
+            def ceil(v):
+                return v
 
         for parent in parents:
             try:
@@ -641,43 +642,37 @@ class AppDelegate(NSObject):
                 h = 32.0
                 pad = 10.0
                 icon_sz = 16.0
-                # 先创建 label 以估算宽度
-                lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
-                lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
+                # 量测文字宽度（采用最终字号）
+                meas = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+                meas.setBezeled_(False); meas.setDrawsBackground_(False); meas.setEditable_(False); meas.setSelectable_(False)
                 try:
-                    lbl.setTextColor_(NSColor.labelColor())
+                    meas.setFont_(NSFont.systemFontOfSize_(13))
                 except Exception:
                     pass
+                meas.setStringValue_(str(text) if text is not None else "")
                 try:
-                    lbl.setFont_(NSFont.systemFontOfSize_(12))
+                    meas.sizeToFit()
+                    lw = float(ceil(meas.frame().size.width + 2.0))
                 except Exception:
-                    pass
-                lbl.setStringValue_(str(text) if text is not None else "")
-                try:
-                    lbl.sizeToFit()
-                except Exception:
-                    pass
-                lw = 100.0
-                try:
-                    lw = max(10.0, min(240.0, float(lbl.frame().size.width)))
-                except Exception:
-                    lw = 140.0
+                    lw = 160.0
+                lw = max(20.0, min(320.0, lw))
                 w = icon_sz + 6.0 + lw + pad * 2
-                # 右上角定位；如是顶栏（drag_area/top_bar）则垂直居中
+
+                # 右上角定位 + 叠放
                 is_drag = parent.__class__.__name__.endswith('MultiWindowDragArea') or parent.__class__.__name__.endswith('TopBarView')
+                slot = int(getattr(parent, '_bb_toast_count', 0))
                 if is_drag:
-                    x = max(pad, bounds.size.width - w - pad)
-                    y = (bounds.size.height - h) / 2.0
+                    x = max(pad, bounds.size.width - w - pad) - slot * 4.0
+                    y = max(0.0, (bounds.size.height - h) / 2.0 - slot * 2.0)
                 else:
                     x = max(pad, bounds.size.width - w - pad)
-                    y = max(pad, bounds.size.height - h - pad)
+                    y = max(pad, bounds.size.height - h - pad - slot * (h + 6.0))
 
-                # 容器
                 toast = NSView.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
                 toast.setWantsLayer_(True)
                 try:
-                    toast.layer().setCornerRadius_(6.0)
-                    toast.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.92).CGColor())
+                    toast.layer().setCornerRadius_(12.0)
+                    toast.layer().setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.88).CGColor())
                     toast.layer().setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0).CGColor())
                     toast.layer().setBorderWidth_(1.0)
                     try:
@@ -693,7 +688,7 @@ class AppDelegate(NSObject):
                     iv = NSImageView.alloc().initWithFrame_(NSMakeRect(pad, (h - icon_sz) / 2.0, icon_sz, icon_sz))
                     img = None
                     try:
-                        img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(icon_name, None)
+                        img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(icon or 'checkmark.circle.fill', None)
                         if img is not None:
                             try:
                                 from AppKit import NSImageSymbolConfiguration, NSFontWeightMedium, NSImageSymbolScaleSmall
@@ -706,39 +701,33 @@ class AppDelegate(NSObject):
                     if img is not None:
                         iv.setImage_(img)
                         try:
-                            if tint is not None and hasattr(iv, 'setContentTintColor_'):
-                                iv.setContentTintColor_(tint)
+                            if color is not None and hasattr(iv, 'setContentTintColor_'):
+                                iv.setContentTintColor_(color)
                         except Exception:
                             pass
                         toast.addSubview_(iv)
                 except Exception:
                     pass
 
-                # 放置 label 到图标右侧
+                # 文本
+                lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(pad + icon_sz + 6.0, (h - 16.0) / 2.0, lw, 16.0))
+                lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
                 try:
-                    lh = min(h - 10.0, float(lbl.frame().size.height) or 14.0)
-                except Exception:
-                    lh = h - 10.0
-                try:
-                    lbl.setFrame_(NSMakeRect(pad + icon_sz + 6.0, (h - lh) / 2.0, lw, lh))
+                    lbl.setTextColor_(NSColor.labelColor())
                 except Exception:
                     pass
-                # 需重新创建 label（之前用于测量，可能未持久化到视图层次）
                 try:
-                    lbl2 = NSTextField.alloc().initWithFrame_(lbl.frame())
-                    lbl2.setBezeled_(False); lbl2.setDrawsBackground_(False); lbl2.setEditable_(False); lbl2.setSelectable_(False)
-                    try:
-                        lbl2.setTextColor_(NSColor.labelColor())
-                    except Exception:
-                        pass
-                    try:
-                        lbl2.setFont_(NSFont.systemFontOfSize_(13))
-                    except Exception:
-                        pass
-                    lbl2.setStringValue_(str(text) if text is not None else "")
-                    toast.addSubview_(lbl2)
+                    lbl.setFont_(NSFont.systemFontOfSize_(13))
                 except Exception:
                     pass
+                lbl.setStringValue_(str(text) if text is not None else "")
+                try:
+                    from AppKit import NSLineBreakByTruncatingTail
+                    if hasattr(lbl, 'setLineBreakMode_'):
+                        lbl.setLineBreakMode_(NSLineBreakByTruncatingTail)
+                except Exception:
+                    pass
+                toast.addSubview_(lbl)
 
                 # 加入并淡入
                 toast.setAlphaValue_(0.0)
@@ -770,6 +759,13 @@ class AppDelegate(NSObject):
                         toast.removeFromSuperview()
                     except Exception:
                         pass
+                # 叠放计数标记，便于移除时回收
+                try:
+                    toast._bb_parent = parent
+                    toast._bb_slot = slot
+                    setattr(parent, '_bb_toast_count', slot + 1)
+                except Exception:
+                    pass
             except Exception:
                 pass
 
