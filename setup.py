@@ -67,7 +67,7 @@ OPTIONS = {
 
 setup(
     name="bubble",
-    version="0.3.2",
+    version="0.3.3",
     # Only include our app packages (exclude historical 'bubblebot')
     packages=find_packages(where="src", include=["bubble", "bubble.*"]),
     package_dir={"": "src"},

@@ -32,6 +32,17 @@ Bubble 0.3.2 — Ctrl+C 行为优化与 README 同步（2025-09-08）
 打包
 - 继续输出 universal2（arm64 + x86_64）版本；包含自定义图标与状态栏图标资源。
 
+Bubble 0.3.3 — 稳定构建与自动发布工作流（2025-09-08）
+
+改进
+- 构建更稳：`setup.py` 使用绝对 APP 路径并仅打包 `bubble` 包，避免 CI 环境路径或历史目录影响。
+- 依赖补齐：增加 `packaging>=24.2`，清除 py2app 关于 packaging 的提示。
+- 自动发布：新增 GitHub Actions 工作流（macOS），推送 tag 即自动构建 .app、打 zip + sha256 并附到 Release。
+
+验证
+- 本地：`rm -rf build dist && python3 -m pip install -r requirements.txt && python3 setup.py py2app -q`，运行 `BB_DEBUG=1 "dist/Bubble.app/Contents/MacOS/Bubble"`。
+- CI：推送 tag（如 `v0.3.3`）会自动出包并创建 Release。
+
 —
 
 Bubble 0.2.2 — 后台页面并行与无缝切换（重磅更新）
