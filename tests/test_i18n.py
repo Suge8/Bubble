@@ -3,7 +3,7 @@ import importlib
 
 
 def test_translations_available():
-    from bubblebot.i18n import load_translations, available_languages
+    from bubble.i18n import load_translations, available_languages
 
     load_translations()
     langs = available_languages()
@@ -14,7 +14,7 @@ def test_translations_available():
 
 def test_t_fallback_to_en_and_missing_key(tmp_path, monkeypatch):
     # Force an unsupported language to trigger fallback
-    from bubblebot import i18n
+    from bubble import i18n
 
     i18n.set_language("xx")
     # Known key should fallback to English
@@ -26,7 +26,7 @@ def test_t_fallback_to_en_and_missing_key(tmp_path, monkeypatch):
 def test_env_override_language(monkeypatch):
     monkeypatch.setenv("BUBBLE_LANG", "fr")
     # Reload module to apply env override path in t()
-    from bubblebot import i18n
+    from bubble import i18n
     importlib.reload(i18n)
     # Known French translation
     assert i18n.t("menu.settings").startswith("Réglages")

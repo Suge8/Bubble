@@ -87,6 +87,11 @@ def main():
         action="store_true",
         help="Check Accessibility permissions only"
     )
+    parser.add_argument(
+        "--capturable",
+        action="store_true",
+        help="Dev only: make windows capturable in screen recording"
+    )
     args = parser.parse_args()
     
     # 设置信号处理器：仅在终端开发模式下响应 Ctrl+C；打包版忽略 Ctrl+C
@@ -123,6 +128,15 @@ def main():
     print(f"Starting macOS {APP_TITLE} overlay.")
     # Autolauncher messaging removed (3.1)
     
+    # Dev-only: allow screen/window recording to capture our windows
+    # by lowering level and allowing window sharing (opt-in via flag).
+    if args.capturable:
+        try:
+            _os.environ["BB_CAPTURABLE"] = "1"
+            print("DEBUG: Capturable mode enabled via --capturable")
+        except Exception:
+            pass
+
     # 初始化应用组件
     print("DEBUG: 开始初始化应用组件...")
     homepage_manager = HomepageManager.alloc().init()

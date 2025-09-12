@@ -1,5 +1,5 @@
 def test_window_manager_unlimited_creation():
-    from bubblebot.models.ai_window import WindowManager, WindowType, WindowGeometry
+    from bubble.models.ai_window import WindowManager, WindowType, WindowGeometry
 
     wm = WindowManager()
     # Ensure defaults mean unlimited

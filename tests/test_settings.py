@@ -6,7 +6,7 @@ import pytest
 
 
 def test_detect_system_language_from_ns_locale(monkeypatch):
-    from bubblebot.components.config_manager import ConfigManager
+    from bubble.components.config_manager import ConfigManager
 
     class _FakeNSLocale:
         @staticmethod
@@ -14,22 +14,22 @@ def test_detect_system_language_from_ns_locale(monkeypatch):
             return ["ja-JP"]
 
     # Inject fake NSLocale so test is cross-platform
-    monkeypatch.setattr("bubblebot.components.config_manager.NSLocale", _FakeNSLocale, raising=False)
+    monkeypatch.setattr("bubble.components.config_manager.NSLocale", _FakeNSLocale, raising=False)
     assert ConfigManager.detect_system_language() == "ja"
 
 
 def test_detect_system_language_from_env(monkeypatch):
-    from bubblebot.components.config_manager import ConfigManager
+    from bubble.components.config_manager import ConfigManager
 
     # Make sure NSLocale path is ignored
-    monkeypatch.setattr("bubblebot.components.config_manager.NSLocale", None, raising=False)
+    monkeypatch.setattr("bubble.components.config_manager.NSLocale", None, raising=False)
     monkeypatch.setenv("LANG", "zh_CN.UTF-8")
     assert ConfigManager.detect_system_language() == "zh"
 
 
 @pytest.mark.skipif(platform.system().lower() != "darwin", reason="Login items only supported on macOS")
 def test_login_items_enable_disable_monkeypatched(tmp_path, monkeypatch):
-    from bubblebot.utils import login_items
+    from bubble.utils import login_items
 
     # Redirect LaunchAgents dir into a temp directory to avoid touching user files
     monkeypatch.setattr(login_items, "_launch_agents_dir", lambda: tmp_path)
@@ -60,8 +60,8 @@ def test_login_items_enable_disable_monkeypatched(tmp_path, monkeypatch):
 @pytest.mark.skipif(platform.system().lower() != "darwin", reason="AppKit required on macOS")
 def test_format_launcher_hotkey_default(monkeypatch):
     # Verify the human-readable formatting for the status bar hint
-    from bubblebot.constants import LAUNCHER_TRIGGER
-    from bubblebot import app as app_mod
+    from bubble.constants import LAUNCHER_TRIGGER
+    from bubble import app as app_mod
 
     # Make a light-weight instance; .init() only sets attributes
     delegate = app_mod.AppDelegate.alloc().init()

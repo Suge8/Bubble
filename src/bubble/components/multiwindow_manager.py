@@ -366,8 +366,16 @@ class MultiWindowManager(NSObject):
                 ai_window.window_id
             )
             
-            # 设置窗口属性
-            ns_window.setLevel_(NSFloatingWindowLevel)
+            # 设置窗口属性（开发可降级为普通层级，便于屏幕录制捕捉）
+            try:
+                import os as _os
+                _capturable = bool(_os.environ.get('BB_CAPTURABLE') == '1' or _os.environ.get('BB_CAPTURE') == '1')
+            except Exception:
+                _capturable = False
+            if _capturable:
+                ns_window.setLevel_(NSNormalWindowLevel)
+            else:
+                ns_window.setLevel_(NSFloatingWindowLevel)
             ns_window.setCollectionBehavior_(
                 NSWindowCollectionBehaviorCanJoinAllSpaces |
                 NSWindowCollectionBehaviorStationary
@@ -380,8 +388,14 @@ class MultiWindowManager(NSObject):
             ns_window.setOpaque_(False)
             ns_window.setBackgroundColor_(NSColor.clearColor())
             
-            # 防止出现在截图中
-            ns_window.setSharingType_(NSWindowSharingNone)
+            # 控制是否允许被截图/录制捕捉（开发可开启）
+            try:
+                if _capturable:
+                    ns_window.setSharingType_(NSWindowSharingReadOnly)
+                else:
+                    ns_window.setSharingType_(NSWindowSharingNone)
+            except Exception:
+                pass
             
             # 设置窗口标题
             window_title = f"{platform_config.display_name} - {ai_window.window_id[:8]}"
@@ -564,6 +578,15 @@ class MultiWindowManager(NSObject):
                 base_hosts = set()
                 if host:
                     base_hosts.add(str(host).lower())
+                    # Add common sibling hosts for known platforms
+                    try:
+                        pid = getattr(platform_config, 'platform_id', '') or ''
+                    except Exception:
+                        pid = ''
+                    h = str(host).lower()
+                    # OpenAI: chat.openai.com often redirects to chatgpt.com and serves media from oaiusercontent.com
+                    if pid == 'openai' or 'openai' in h or 'chatgpt' in h:
+                        base_hosts |= { 'chatgpt.com', 'openai.com', 'oaiusercontent.com' }
                 # 合并自定义 allow_hosts（来自 ConfigManager）
                 try:
                     from ..components.config_manager import ConfigManager as _CM

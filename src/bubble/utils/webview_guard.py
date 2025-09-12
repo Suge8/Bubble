@@ -56,7 +56,6 @@ class NavigationGuard(NSObject):
         return self
 
     # ---- public API ----
-    @objc.signature("v@:@")
     def setAllowedHosts_(self, hosts):  # ObjC-friendly: - (void)setAllowedHosts:(id)hosts
         try:
             self._allowed_hosts = {str(h).lower() for h in (hosts or [])}

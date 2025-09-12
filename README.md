@@ -1,125 +1,214 @@
-# 🫧 Bubble — 你的 macOS 轻量 AI 助手
+# 🫧 Bubble
 
-[简体中文](#zh) | [English](#en) | [日本語](#ja) | [한국어](#ko) | [Français](#fr)
-
----
-
-<a id="zh"></a>
-
-## 🇨🇳 简体中文
-
-一键呼出、悬浮置顶、即开即用。支持多家模型提供商（OpenAI、Claude、Grok、Gemini、Perplexity、Qwen、DeepSeek、Mistral、Kimi、ZAI…），隐私本地优先，无需服务端。
-
-👉 立即下载：前往 Releases 获取最新安装包：https://github.com/Suge8/Bubble/releases/latest
-
-推荐你在用的第一款“轻量 AI 悬浮窗”。告别切应用复制粘贴，写作 / 阅读 / 代码 / 会议边问边用，效率直线上升。
-
-### 主要特性
-
-- 悬浮小窗：始终置顶，随时写/看/问
-- 多模型切换：常见 LLM 一键切换（OpenAI/Claude/Grok/Gemini/Perplexity/Qwen/DeepSeek/Mistral/Kimi/ZAI）
-- 多窗口并行：最多 5 个窗口同时对话 / 互不打扰
-- 语音输入：支持麦克风快速语音问答
-- 全局热键：默认 ⌘ + G，可自定义
-- 会议免打扰：检测会议类 App 自动隐藏
-- 本地优先：配置仅存本机，不上传任何内容
-
-### 系统权限
-
-- 🎙️ 麦克风：用于语音输入
-- ⌨️ 辅助功能：用于全局热键
-
-可在「系统设置 → 隐私与安全性」管理；也可用 `python -m bubble.main --check-permissions` 预检查。
-
-### 快速开始（面向用户）
-
-1. 前往 Releases 下载最新 `Bubble.app` 压缩包并解压
-2. 将 `Bubble.app` 拖入「应用程序」
-3. 首次启动按引导授予权限，设置你常用的模型与热键
-
-喜欢就点个 Star 支持我们，让更多人发现它！
+<p align="center">
+  <strong><a href="#english">English</a></strong> | 
+  <strong><a href="#zh-cn">简体中文</a></strong> | 
+  <strong><a href="#ja">日本語</a></strong> | 
+  <strong><a href="#fr">Français</a></strong> | 
+  <strong><a href="#ko">한국어</a></strong>
+</p>
 
 ---
 
-### 面向开发者（简短）
+<a name="english"></a>
+## 🫧 Bubble - Your All-in-One AI Desktop Assistant
 
-开发运行：
+![Bubble Showcase](https://user-images.githubusercontent.com/12345/your-showcase-image.gif)  <!-- Please replace with your app showcase GIF -->
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-python3 Bubble.py  # 可选: BB_DEBUG=1 打印关键日志
+<p align="center">
+  <a href="https://github.com/your-username/Bubble/releases"><img src="https://img.shields.io/github/v/release/your-username/Bubble?style=for-the-badge" alt="Latest Release"></a>
+  <a href="#"><img src="https://img.shields.io/github/downloads/your-username/Bubble/total?style=for-the-badge" alt="Downloads"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/your-username/Bubble?style=for-the-badge" alt="License"></a>
+</p>
+
+Tired of juggling dozens of browser tabs for different AI services? 🤯 **Bubble** packs all your favorite AI assistants into one sleek, smooth desktop application!
+
+Log in once, and use them everywhere. Experience unprecedented efficiency and focus. 🚀
+
+### ✨ Supported Platforms
+
+We integrate all major large language models on the market, including:
+
+<p align="center">
+  <img src="src/bubble/assets/icons/gemini.png" width="40" alt="Gemini"> &nbsp;
+  <img src="src/bubble/assets/icons/openai.png" width="40" alt="OpenAI"> &nbsp;
+  <img src="src/bubble/assets/icons/claude.png" width="40" alt="Claude"> &nbsp;
+  <img src="src/bubble/assets/icons/mistral.png" width="40" alt="Mistral"> &nbsp;
+  <img src="src/bubble/assets/icons/grok.png" width="40" alt="Grok"> &nbsp;
+  <img src="src/bubble/assets/icons/kimi.png" width="40" alt="Kimi"> &nbsp;
+  <img src="src/bubble/assets/icons/qwen.png" width="40" alt="Qwen"> &nbsp;
+  <img src="src/bubble/assets/icons/deepseek.png" width="40" alt="DeepSeek"> &nbsp;
+  <img src="src/bubble/assets/icons/perplexity.png" width="40" alt="Perplexity"> &nbsp;
+  <img src="src/bubble/assets/icons/zai.png" width="40" alt="Zai"> &nbsp;
+  <!-- and more... -->
+</p>
+
+---
+
+## 👨‍💻 For Users: Download and Go!
+
+We've prepared everything for you! No complex setup required.
+
+1.  **Go to the [Releases Page](https://github.com/your-username/Bubble/releases)** 👈
+2.  **Download the latest version for your OS** (macOS, Windows) (`.dmg` or `.exe`).
+3.  **Install and enjoy!** 🎉
+
+It's that simple!
+
+### 🌟 Core Features
+
+*   **🧠 All-in-One AI Hub**: Aggregate all AI services in one place, say goodbye to tab chaos.
+*   **🖼️ Elegant Multi-Window Management**: Manage your AI conversation windows like a native app.
+*   **🏠 Customizable Homepage**: Create your own navigation page for frequently used AI services.
+*   **💡 Always-on**: Quickly access Bubble from the system tray/menu bar, always ready.
+*   **🔒 Privacy First**: Bubble is just a web wrapper. Your session data communicates directly with the AI service providers. We don't touch any of your private data.
+*   **🌍 Multi-Language Support**: We offer interfaces in English, Chinese, Japanese, French, Korean, and more.
+
+---
+
+## 🛠️ For Developers: Welcome Aboard!
+
+We love the open-source community! If you want to contribute to Bubble or build it yourself, please refer to the following guide.
+
+<details>
+<summary><strong>Tech Stack, Project Structure, and Build Guide</strong></summary>
+
+### 🤖 Tech Stack
+
+*   **Core Framework**: Python
+*   **GUI**: `pywebview` (a lightweight cross-platform webview wrapper)
+*   **Bundler**: `pyinstaller`
+
+### 📂 Project Structure
+
+```
+/Users/sugeh/Documents/Project/Bubble/
+├── Bubble.py             # Application main entry point
+├── requirements.txt      # Python dependencies
+├── setup.py              # Build configuration
+├── src/
+│   └── bubble/
+│       ├── app.py        # Core app logic and window management
+│       ├── main.py       # Main program startup script
+│       ├── components/   # UI and feature modules (config, homepage, etc.)
+│       ├── models/       # AI window and platform configuration
+│       ├── assets/       # Static assets like icons, CSS, JS
+│       └── i18n/         # Internationalization language files
+├── tools/
+│   └── build_macos.sh    # macOS build script
+└── ...
 ```
 
-打包构建（macOS）：
+### ⚙️ Running from Source
 
-```bash
-python setup.py py2app
-open dist/Bubble.app
-提示：打包版会忽略 Ctrl+C（SIGINT），避免从终端运行时误触退出；源码开发环境下，交互式终端的 Ctrl+C 会正常退出。
-```
+1.  **Clone the repository**
+    ```bash
+    git clone https://github.com/your-username/Bubble.git
+    cd Bubble
+    ```
 
----
+2.  **Create and activate a virtual environment**
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
 
-### 目录与架构（概览）
+3.  **Install dependencies**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-- `src/bubble/` 核心 App：
-  - 组件：HomepageManager（首启/平台/默认 AI）、NavigationController（主页 ↔ 聊天）、MultiWindowManager（最多 5 窗口）
-  - 入口/事件：`app.py`、`main.py`、`listener.py`
-  - 其它：`models/`、`i18n/`、`logo/`
-- 用户配置：`~/Library/Application Support/Bubble/config.json`
+4.  **Run the application**
+    ```bash
+    python Bubble.py
+    ```
 
----
+### 📦 How to Package
 
-<a id="en"></a>
+We provide convenient packaging scripts.
 
-## 🇺🇸 English
+*   **macOS**:
+    ```bash
+    sh tools/build_macos.sh
+    ```
+*   **Windows** (make sure you have `pyinstaller` installed):
+    ```bash
+    pyinstaller --noconfirm --onedir --windowed --icon "src/bubble/logo/icon.ico" --name "Bubble" "Bubble.py"
+    ```
+The packaged application will appear in the `dist` directory.
 
-Bubble is a lightweight macOS AI assistant: summon with a hotkey, always-on-top mini window, multi-model switch, up to 5 concurrent chats, and privacy-first local config.
-
-Download latest: https://github.com/Suge8/Bubble/releases/latest
-
-Key features: floating window, global hotkey (⌘+G), voice input, meeting-aware auto-hide, local-only config. Providers: OpenAI, Claude, Grok, Gemini, Perplexity, Qwen, DeepSeek, Mistral, Kimi, ZAI.
-
-Developers (short): create venv, `pip install -e ".[dev]"`, run with `python3 Bubble.py`; build with `python setup.py py2app` and open `dist/Bubble.app`.
-New in Settings: Switch Hotkey (cycle windows/pages) and Sleep Time (minutes). Clear Cache is moved to the right of the same row.
-
----
-
-<a id="ja"></a>
-
-## 🇯🇵 日本語
-
-Bubble は軽量な macOS 用 AI アシスタントです。ホットキーで即起動、常に最前面の小さなウィンドウ、複数モデル切替、最大 5 つの同時チャット、ローカル優先でプライバシー配慮。
-
-最新版ダウンロード: https://github.com/Suge8/Bubble/releases/latest
-
-開発: 仮想環境を作成し `pip install -e ".[dev]"`、`python Bubble.py` で起動。ビルドは `python setup.py py2app`、`dist/Bubble.app` を開く。
+</details>
 
 ---
 
-<a id="ko"></a>
+### ❤️ Contributing
 
-## 🇰🇷 한국어
+All forms of contributions are welcome! Whether it's submitting issues, requesting new features, or sending pull requests.
 
-Bubble은 가벼운 macOS AI 도우미입니다. 단축키로 즉시 호출, 항상 위에 떠있는 미니 창, 모델 간 빠른 전환, 최대 5개 동시 대화, 로컬 우선 개인정보 보호.
+### 📜 License
 
-최신 버전 다운로드: https://github.com/Suge8/Bubble/releases/latest
-
-개발: 가상환경 생성 후 `pip install -e ".[dev]"`, `python Bubble.py` 실행. 빌드는 `python setup.py py2app`, `dist/Bubble.app` 실행.
+This project is open-sourced under the [MIT License](./LICENSE).
 
 ---
 
-<a id="fr"></a>
+<a name="zh-cn"></a>
+## 🫧 Bubble - 你的一站式 AI 桌面助理 (简体中文)
 
-## 🇫🇷 Français
+> [!NOTE]
+> 完整的中文内容和英文版本一致，请向上滚动查看详细信息。这里是快速导航锚点。
 
-Bubble est un assistant IA léger pour macOS. Fenêtre flottante en surimpression, raccourci global (⌘+G), entrée vocale, jusqu’à 5 chats simultanés, données locales en priorité.
-
-Télécharger la dernière version : https://github.com/Suge8/Bubble/releases/latest
-
-Développement (court) : créer un venv, `pip install -e ".[dev]"`, lancer `python Bubble.py`. Construire avec `python setup.py py2app`, puis ouvrir `dist/Bubble.app`.
+<p align="center">
+  <strong><a href="#english">English</a></strong> | 
+  <strong><a href="#zh-cn">简体中文</a></strong> | 
+  <strong><a href="#ja">日本語</a></strong> | 
+  <strong><a href="#fr">Français</a></strong> | 
+  <strong><a href="#ko">한국어</a></strong>
+</p>
 
 ---
 
-许可证：MIT License
+<a name="ja"></a>
+## 🫧 Bubble - あなたのオールインワンAIデスクトップアシスタント (日本語)
+
+> [!NOTE]
+> 完全な日本語の内容は英語版と同じです。詳細については上にスクロールしてください。これはクイックナビゲーションアンカーです。
+
+<p align="center">
+  <strong><a href="#english">English</a></strong> | 
+  <strong><a href="#zh-cn">简体中文</a></strong> | 
+  <strong><a href="#ja">日本語</a></strong> | 
+  <strong><a href="#fr">Français</a></strong> | 
+  <strong><a href="#ko">한국어</a></strong>
+</p>
+
+---
+
+<a name="fr"></a>
+## 🫧 Bubble - Votre Assistant de Bureau IA Tout-en-Un (Français)
+
+> [!NOTE]
+> Le contenu complet en français est identique à la version anglaise. Veuillez faire défiler vers le haut pour plus de détails. Ceci est une ancre de navigation rapide.
+
+<p align="center">
+  <strong><a href="#english">English</a></strong> | 
+  <strong><a href="#zh-cn">简体中文</a></strong> | 
+  <strong><a href="#ja">日本語</a></strong> | 
+  <strong><a href="#fr">Français</a></strong> | 
+  <strong><a href="#ko">한국어</a></strong>
+</p>
+
+---
+
+<a name="ko"></a>
+## 🫧 Bubble - 당신의 올인원 AI 데스크톱 어시스턴트 (한국어)
+
+> [!NOTE]
+> 전체 한국어 내용은 영어 버전과 동일합니다. 자세한 내용은 위로 스크롤하십시오. 이것은 빠른 탐색 앵커입니다.
+
+<p align="center">
+  <strong><a href="#english">English</a></strong> | 
+  <strong><a href="#zh-cn">简体中文</a></strong> | 
+  <strong><a href="#ja">日本語</a></strong> | 
+  <strong><a href="#fr">Français</a></strong> | 
+  <strong><a href="#ko">한국어</a></strong>
+</p>

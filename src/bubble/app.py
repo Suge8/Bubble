@@ -8,7 +8,7 @@ import signal
 import objc
 from AppKit import *
 from AppKit import NSCursor
-from AppKit import NSWindowSharingNone
+from AppKit import NSWindowSharingNone, NSWindowSharingReadOnly
 from WebKit import *
 from Quartz import *
 from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
@@ -61,6 +61,7 @@ from .listener import (
     set_custom_launcher_trigger,
     SPECIAL_KEY_NAMES,
 )
+from .listener import SWITCHER_TRIGGER
 from .components.platform_manager import PlatformManager
 from .components.config_manager import ConfigManager
 from .i18n import t as _t, set_language as _set_lang, get_language as _get_lang
@@ -490,11 +491,130 @@ class AppDelegate(NSObject):
 
     # ----- Hotkey: cycle active window (switcher) -----
     def cycleActiveWindow_(self, _sender):
+        """Cycle between open AI windows; fallback to cycling in-window pages when needed."""
+        ok = False
         try:
-            if getattr(self, 'multiwindow_manager', None) and hasattr(self.multiwindow_manager, 'cycle_active_window'):
-                self.multiwindow_manager.cycle_active_window(True)
+            mw = getattr(self, 'multiwindow_manager', None)
+            if mw and hasattr(mw, 'cycle_active_window'):
+                # Only meaningful if more than one NSWindow exists
+                try:
+                    count = int(getattr(mw, 'get_window_count', lambda: len(getattr(mw, 'ns_windows', {})))())
+                except Exception:
+                    count = len(getattr(mw, 'ns_windows', {})) if getattr(mw, 'ns_windows', None) is not None else 0
+                if count >= 2:
+                    ok = bool(mw.cycle_active_window(True))
+        except Exception:
+            ok = False
+        # Fallback: cycle pages (single-window multi-page mode)
+        if not ok:
+            try:
+                ok = bool(self._cycle_pages(True))
+            except Exception:
+                ok = False
+        return ok
+
+    def _cycle_pages(self, forward: bool = True) -> bool:
+        try:
+            pages = list(getattr(self, '_pages_map', {}).keys())
+            if len(pages) < 2:
+                return False
+            cur = getattr(self, '_active_page_id', None)
+            try:
+                idx = pages.index(cur) if cur in pages else -1
+            except Exception:
+                idx = -1
+            if forward:
+                next_idx = 0 if idx == -1 else (idx + 1) % len(pages)
+            else:
+                next_idx = (idx - 1) % len(pages) if idx != -1 else 0
+            target = pages[next_idx]
+            return bool(self._pages_switch(target))
+        except Exception:
+            return False
+
+    # ---- Overlay helpers (dismiss) ----
+    def _dismiss_overlay_ref(self, attr):
+        try:
+            ov = getattr(self, attr, None)
+            if ov is None:
+                return
+            if os.environ.get('BB_NO_EFFECTS') != '1':
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.currentContext().setDuration_(0.18)
+                ov.animator().setAlphaValue_(0.0)
+                NSAnimationContext.endGrouping()
+            ov.removeFromSuperview()
+            setattr(self, attr, None)
+        except Exception:
+            try:
+                setattr(self, attr, None)
+            except Exception:
+                pass
+
+    # ---- Actions for permission overlay ----
+    def permGrant_(self, _sender):
+        try:
+            from .launcher import check_permissions
+            check_permissions(ask=True)
         except Exception:
             pass
+        # Proactively open System Settings to the Accessibility and Microphone panes
+        try:
+            ws = NSWorkspace.sharedWorkspace()
+            # Accessibility
+            ws.openURL_(NSURL.URLWithString_(
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            ))
+            # Microphone (best-effort)
+            try:
+                ws.openURL_(NSURL.URLWithString_(
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+                ))
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+                AVMediaTypeAudio, lambda g: None
+            )
+        except Exception:
+            pass
+        try:
+            from .components.config_manager import ConfigManager as _CM
+            _CM.mark_permissions_prompted()
+        except Exception:
+            pass
+        self._dismiss_overlay_ref('_perm_overlay')
+
+    def permLater_(self, _sender):
+        try:
+            from .components.config_manager import ConfigManager as _CM
+            _CM.mark_permissions_prompted()
+        except Exception:
+            pass
+        self._dismiss_overlay_ref('_perm_overlay')
+
+    # ---- Actions for onboarding overlay ----
+    def onboardOpenSettings_(self, _sender):
+        try:
+            self.showSettings_(None)
+        except Exception:
+            pass
+        try:
+            from .components.config_manager import ConfigManager as _CM
+            _CM.mark_onboarding_shown()
+        except Exception:
+            pass
+        self._dismiss_overlay_ref('_onboard_overlay')
+
+    def onboardDismiss_(self, _sender):
+        try:
+            from .components.config_manager import ConfigManager as _CM
+            _CM.mark_onboarding_shown()
+        except Exception:
+            pass
+        self._dismiss_overlay_ref('_onboard_overlay')
 
     # 简单内联 Toast（与设置页一致）
     def _inline_toast(self, text: str, duration: float = 3.0):
@@ -1147,30 +1267,215 @@ class AppDelegate(NSObject):
         except Exception:
             pass
 
-    # ---- First-run helpers: permission prompt and onboarding highlights (placeholders) ----
+    # ---- First-run helpers: permission prompt and onboarding highlights ----
     def presentPermissionsPrompt_(self, _):
-        """Present a minimal centralized permission prompt (placeholder).
-
-        Currently delegates to launcher.check_permissions to surface the standard
-        macOS Accessibility dialog; can be extended to include Microphone and a
-        custom rounded UI with deep links.
-        """
+        """Show a rounded in-app prompt to request Accessibility/Microphone."""
         try:
-            from .launcher import check_permissions
-            ok = check_permissions(ask=True)
-            if not ok:
-                try:
-                    self.show_toast(self._i18n_or_default('toast.permRequired', 'Permissions required. Open System Settings to grant.'))
-                except Exception:
-                    pass
+            from .components.config_manager import ConfigManager as _CM
+            force = os.environ.get('BB_FORCE_PERM') == '1'
+            if _CM.is_permissions_prompted() and not force:
+                return
+            # Avoid stacking if already shown
+            if getattr(self, '_perm_overlay', None):
+                return
+            parent = self.root_view if getattr(self, 'root_view', None) else (self.window.contentView() if self.window else None)
+            if not parent:
+                return
+            pb = parent.bounds()
+            ov = NSView.alloc().initWithFrame_(pb)
+            ov.setWantsLayer_(True)
+            try:
+                ov.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.28).CGColor())
+            except Exception:
+                pass
+            # Proportional card size to fit narrow phone-like window
+            margin = 16
+            max_w = max(300, int(pb.size.width - margin * 2))
+            cw = min(420, max_w)
+            ch = max(160, min(220, int(cw * 0.48)))
+            card = NSView.alloc().initWithFrame_(NSMakeRect((pb.size.width-cw)/2, (pb.size.height-ch)/2, cw, ch))
+            card.setWantsLayer_(True)
+            try:
+                card.layer().setCornerRadius_(14.0)
+                card.layer().setBackgroundColor_(NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.96).CGColor())
+            except Exception:
+                pass
+            title = NSTextField.alloc().initWithFrame_(NSMakeRect(18, ch-42, cw-36, 22))
+            title.setBezeled_(False); title.setDrawsBackground_(False); title.setEditable_(False); title.setSelectable_(False)
+            try:
+                title.setFont_(NSFont.boldSystemFontOfSize_(15))
+                title.setTextColor_(NSColor.labelColor())
+            except Exception:
+                pass
+            title.setStringValue_(self._i18n_or_default('onboard.permTitle', 'Enable Accessibility & Microphone'))
+            body = NSTextField.alloc().initWithFrame_(NSMakeRect(18, ch-92, cw-36, 44))
+            body.setBezeled_(False); body.setDrawsBackground_(False); body.setEditable_(False); body.setSelectable_(False)
+            try:
+                body.setFont_(NSFont.systemFontOfSize_(13))
+                body.setTextColor_(NSColor.secondaryLabelColor())
+                body.setLineBreakMode_(NSLineBreakByWordWrapping)
+                body.setUsesSingleLineMode_(False)
+            except Exception:
+                pass
+            body.setStringValue_(self._i18n_or_default('onboard.permBody', 'Hotkeys need Accessibility; voice input needs Microphone. Click Grant to request.'))
+            btn_w, btn_h = 110, 30
+            grant = NSButton.alloc().initWithFrame_(NSMakeRect(cw-18-btn_w, 18, btn_w, btn_h))
+            grant.setTitle_(self._i18n_or_default('button.grant', 'Grant'))
+            later = NSButton.alloc().initWithFrame_(NSMakeRect(cw-18-btn_w*2-12, 18, btn_w, btn_h))
+            later.setTitle_(self._i18n_or_default('button.later', 'Later'))
+            try:
+                grant.setBezelStyle_(NSBezelStyleRounded)
+                later.setBezelStyle_(NSBezelStyleRounded)
+            except Exception:
+                pass
+
+            # Icons for buttons (SF Symbols)
+            try:
+                img_ok = NSImage.imageWithSystemSymbolName_accessibilityDescription_("checkmark.seal", None)
+                if img_ok:
+                    grant.setImage_(img_ok)
+                    grant.setImagePosition_(NSImageLeft)
+                    try:
+                        grant.setContentTintColor_(NSColor.controlAccentColor())
+                    except Exception:
+                        pass
+                img_later = NSImage.imageWithSystemSymbolName_accessibilityDescription_("clock", None)
+                if img_later:
+                    later.setImage_(img_later)
+                    later.setImagePosition_(NSImageLeft)
+            except Exception:
+                pass
+
+            grant.setTarget_(self); grant.setAction_("permGrant:")
+            later.setTarget_(self); later.setAction_("permLater:")
+            card.addSubview_(title); card.addSubview_(body); card.addSubview_(grant); card.addSubview_(later)
+            ov.addSubview_(card)
+            ov.setAlphaValue_(0.0)
+            parent.addSubview_(ov)
+            try:
+                if os.environ.get('BB_NO_EFFECTS') != '1':
+                    NSAnimationContext.beginGrouping()
+                    NSAnimationContext.currentContext().setDuration_(0.18)
+                    ov.animator().setAlphaValue_(1.0)
+                    NSAnimationContext.endGrouping()
+                else:
+                    ov.setAlphaValue_(1.0)
+            except Exception:
+                ov.setAlphaValue_(1.0)
+            setattr(self, '_perm_overlay', ov)
+            try:
+                _CM.mark_permissions_prompted()
+            except Exception:
+                pass
         except Exception:
             pass
 
     def presentOnboardingHighlights_(self, _):
-        """Placeholder for guided highlights (first-run tips)."""
+        """Show a simple onboarding card with tips and a Settings button."""
         try:
-            # Future: integrate a highlight library; for now, show a brief toast
-            self.show_toast(self._i18n_or_default('toast.onboarding', 'Tip: Use Settings to set hotkeys and sleep time.'))
+            from .components.config_manager import ConfigManager as _CM
+            force = os.environ.get('BB_FORCE_ONBOARD') == '1'
+            if _CM.is_onboarding_shown() and not force:
+                return
+            if getattr(self, '_onboard_overlay', None):
+                return
+            parent = self.root_view if getattr(self, 'root_view', None) else (self.window.contentView() if self.window else None)
+            if not parent:
+                return
+            pb = parent.bounds()
+            ov = NSView.alloc().initWithFrame_(pb)
+            ov.setWantsLayer_(True)
+            try:
+                ov.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.22).CGColor())
+            except Exception:
+                pass
+            # Proportional size to fit current window
+            margin = 16
+            max_w = max(300, int(pb.size.width - margin * 2))
+            cw = min(440, max_w)
+            ch = max(160, min(240, int(cw * 0.50)))
+            card = NSView.alloc().initWithFrame_(NSMakeRect((pb.size.width-cw)/2, (pb.size.height-ch)/2, cw, ch))
+            card.setWantsLayer_(True)
+            try:
+                card.layer().setCornerRadius_(14.0)
+                card.layer().setBackgroundColor_(NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.96).CGColor())
+            except Exception:
+                pass
+            title = NSTextField.alloc().initWithFrame_(NSMakeRect(18, ch-42, cw-36, 22))
+            title.setBezeled_(False); title.setDrawsBackground_(False); title.setEditable_(False); title.setSelectable_(False)
+            try:
+                title.setFont_(NSFont.boldSystemFontOfSize_(15))
+                title.setTextColor_(NSColor.labelColor())
+            except Exception:
+                pass
+            title.setStringValue_(self._i18n_or_default('onboard.title', 'Welcome to Bubble'))
+            body = NSTextField.alloc().initWithFrame_(NSMakeRect(18, ch-96, cw-36, 60))
+            body.setBezeled_(False); body.setDrawsBackground_(False); body.setEditable_(False); body.setSelectable_(False)
+            try:
+                body.setFont_(NSFont.systemFontOfSize_(13))
+                body.setTextColor_(NSColor.secondaryLabelColor())
+                body.setLineBreakMode_(NSLineBreakByWordWrapping)
+                body.setUsesSingleLineMode_(False)
+            except Exception:
+                pass
+            body.setStringValue_(self._i18n_or_default('onboard.body', 'Tip: Set Show/Hide and Switch Pages hotkeys and adjust Sleep time in Settings.'))
+            btn_w, btn_h = 110, 30
+            settings_btn = NSButton.alloc().initWithFrame_(NSMakeRect(cw-18-btn_w, 18, btn_w, btn_h))
+            settings_btn.setTitle_(self._i18n_or_default('button.settings', 'Settings'))
+            gotit_btn = NSButton.alloc().initWithFrame_(NSMakeRect(cw-18-btn_w*2-12, 18, btn_w, btn_h))
+            gotit_btn.setTitle_(self._i18n_or_default('button.gotIt', 'Got it'))
+            try:
+                settings_btn.setBezelStyle_(NSBezelStyleRounded)
+                gotit_btn.setBezelStyle_(NSBezelStyleRounded)
+            except Exception:
+                pass
+
+            # Icons for buttons
+            try:
+                img_settings = NSImage.imageWithSystemSymbolName_accessibilityDescription_("gearshape", None)
+                if img_settings:
+                    settings_btn.setImage_(img_settings)
+                    settings_btn.setImagePosition_(NSImageLeft)
+                img_ok = NSImage.imageWithSystemSymbolName_accessibilityDescription_("checkmark.circle", None)
+                if img_ok:
+                    gotit_btn.setImage_(img_ok)
+                    gotit_btn.setImagePosition_(NSImageLeft)
+            except Exception:
+                pass
+
+            def _dismiss():
+                try:
+                    if os.environ.get('BB_NO_EFFECTS') != '1':
+                        NSAnimationContext.beginGrouping()
+                        NSAnimationContext.currentContext().setDuration_(0.18)
+                        ov.animator().setAlphaValue_(0.0)
+                        NSAnimationContext.endGrouping()
+                    ov.removeFromSuperview()
+                    setattr(self, '_onboard_overlay', None)
+                except Exception:
+                    pass
+
+            settings_btn.setTarget_(self); settings_btn.setAction_("onboardOpenSettings:")
+            gotit_btn.setTarget_(self); gotit_btn.setAction_("onboardDismiss:")
+            card.addSubview_(title); card.addSubview_(body); card.addSubview_(settings_btn); card.addSubview_(gotit_btn)
+            ov.addSubview_(card)
+            ov.setAlphaValue_(0.0)
+            parent.addSubview_(ov)
+            try:
+                if os.environ.get('BB_NO_EFFECTS') != '1':
+                    NSAnimationContext.beginGrouping()
+                    NSAnimationContext.currentContext().setDuration_(0.18)
+                    ov.animator().setAlphaValue_(1.0)
+                    NSAnimationContext.endGrouping()
+                else:
+                    ov.setAlphaValue_(1.0)
+            except Exception:
+                ov.setAlphaValue_(1.0)
+            setattr(self, '_onboard_overlay', ov)
+            try:
+                _CM.mark_onboarding_shown()
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -1307,10 +1612,18 @@ class AppDelegate(NSObject):
         if hasattr(self.window, 'setWindowInstanceData_windowId_platformId_'):
             self.window.setWindowInstanceData_windowId_platformId_(None, default_window_id, default_platform_id)
             
-        # 置顶窗口，保证始终在最前
+        # 置顶窗口（可选：开发模式下可降级为普通层级以便屏幕录制选择到窗口）
         try:
-            self.window.setLevel_(NSFloatingWindowLevel)
-            print(f"DEBUG: 窗口级别设置为: {NSFloatingWindowLevel} (置顶)")
+            _capturable = bool(os.environ.get('BB_CAPTURABLE') == '1' or os.environ.get('BB_CAPTURE') == '1')
+        except Exception:
+            _capturable = False
+        try:
+            if _capturable:
+                self.window.setLevel_(NSNormalWindowLevel)
+                print(f"DEBUG: Capturable 模式：窗口级别设置为: {NSNormalWindowLevel}")
+            else:
+                self.window.setLevel_(NSFloatingWindowLevel)
+                print(f"DEBUG: 窗口级别设置为: {NSFloatingWindowLevel} (置顶)")
         except Exception:
             # 退化为普通层级
             self.window.setLevel_(NSNormalWindowLevel)
@@ -1380,8 +1693,20 @@ class AppDelegate(NSObject):
         except Exception:
             pass
         print("DEBUG: 窗口设为透明+根视图圆角背景")
-        # Prevent overlay from appearing in screenshots or screen recordings
-        self.window.setSharingType_(NSWindowSharingNone)
+        # 控制窗口是否可被截屏/录制捕捉（开发可开启）
+        try:
+            _capturable = bool(os.environ.get('BB_CAPTURABLE') == '1' or os.environ.get('BB_CAPTURE') == '1')
+        except Exception:
+            _capturable = False
+        if _capturable:
+            try:
+                self.window.setSharingType_(NSWindowSharingReadOnly)
+                print("DEBUG: Capturable 模式：窗口分享类型=ReadOnly（允许屏幕录制捕捉）")
+            except Exception:
+                pass
+        else:
+            # Prevent overlay from appearing in screenshots or screen recordings
+            self.window.setSharingType_(NSWindowSharingNone)
 
         # 隐藏系统交通灯按钮，完全自定义顶部栏
         try:
@@ -1860,19 +2185,37 @@ class AppDelegate(NSObject):
             )
         except Exception:
             pass
-        # Create simplified status bar menu (hint + Settings… + Quit)
+        # Create simplified status bar menu (hints + Settings… + Quit)
         menu = NSMenu.alloc().init()
         menu.setDelegate_(self)
         # Hint item (disabled)
         self.menu_hint_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("", None, "")
         self.menu_hint_item.setEnabled_(False)
         menu.addItem_(self.menu_hint_item)
+        # Switcher hint item (disabled)
+        try:
+            self.menu_switch_hint_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("", None, "")
+            self.menu_switch_hint_item.setEnabled_(False)
+            menu.addItem_(self.menu_switch_hint_item)
+        except Exception:
+            self.menu_switch_hint_item = None
         menu.addItem_(NSMenuItem.separatorItem())
         # Settings…
         self.menu_settings_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Settings…", "showSettings:", "")
         self.menu_settings_item.setTarget_(self)
         self.menu_settings_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("gearshape", None))
         menu.addItem_(self.menu_settings_item)
+        # Debug: Show Homepage Tour
+        try:
+            self.menu_debug_tour_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Show Homepage Tour (Debug)", "showHomepageTour:", "")
+            self.menu_debug_tour_item.setTarget_(self)
+            try:
+                self.menu_debug_tour_item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("wand.and.stars", None))
+            except Exception:
+                pass
+            menu.addItem_(self.menu_debug_tour_item)
+        except Exception:
+            pass
         menu.addItem_(NSMenuItem.separatorItem())
         # Quit
         self.menu_quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Quit", "terminate:", "q")
@@ -1928,12 +2271,55 @@ class AppDelegate(NSObject):
         parts.append(keyname)
         return '+'.join(parts)
 
+    def _format_switcher_hotkey(self) -> str:
+        """Format the switcher (cycle pages) hotkey similar to launcher format."""
+        try:
+            flags_val = SWITCHER_TRIGGER.get('flags')
+            key_val = SWITCHER_TRIGGER.get('key')
+            if flags_val in (None, 0) and key_val in (None, 0):
+                return '—'
+            flags = int(flags_val or 0)
+            key = int(key_val or 0)
+        except Exception:
+            flags, key = 0, 0
+        parts = []
+        try:
+            from Quartz import NSCommandKeyMask, NSAlternateKeyMask, NSShiftKeyMask, NSControlKeyMask
+            if flags & NSCommandKeyMask:
+                parts.append('⌘')
+            if flags & NSAlternateKeyMask:
+                parts.append('⌥')
+            if flags & NSShiftKeyMask:
+                parts.append('⇧')
+            if flags & NSControlKeyMask:
+                parts.append('⌃')
+        except Exception:
+            pass
+        try:
+            keyname = SPECIAL_KEY_NAMES.get(key)
+        except Exception:
+            keyname = None
+        if not keyname:
+            keymap = {
+                0: 'a', 1: 's', 2: 'd', 3: 'f', 4: 'h', 5: 'g', 6: 'z', 7: 'x', 8: 'c', 9: 'v',
+                11: 'b', 12: 'q', 13: 'w', 14: 'e', 15: 'r', 16: 'y', 17: 't', 31: 'o', 32: 'u',
+                34: 'i', 35: 'p', 37: 'l', 38: 'j', 40: 'k', 45: 'n', 46: 'm', 49: 'Space', 36: 'Return', 53: 'Esc'
+            }
+            keyname = keymap.get(key) or str(key)
+        parts.append(keyname)
+        return '+'.join(parts)
+
     def _refresh_status_menu_titles(self):
         # Update simplified menu text to current language
         try:
             hotkey = self._format_launcher_hotkey()
             if getattr(self, 'menu_hint_item', None) is not None:
                 self.menu_hint_item.setTitle_(self._i18n_or_default('menu.showHideHint', 'Press {hotkey} to Show/Hide', hotkey=hotkey))
+            # Update switcher hint under the show/hide hint
+            if getattr(self, 'menu_switch_hint_item', None) is not None:
+                sw = self._format_switcher_hotkey()
+                # Default English fallback keeps compact style
+                self.menu_switch_hint_item.setTitle_(self._i18n_or_default('menu.switchHint', '{hotkey} Switch windows', hotkey=sw))
             if getattr(self, 'menu_settings_item', None) is not None:
                 self.menu_settings_item.setTitle_(self._i18n_or_default('menu.settings', 'Settings…'))
             if getattr(self, 'menu_quit_item', None) is not None:
@@ -1990,6 +2376,45 @@ class AppDelegate(NSObject):
         elif not skip_tap:
             print("ERROR: 事件监听器创建失败！请检查 Accessibility 权限")
             print("请在 系统偏好设置 > 安全性与隐私 > 隐私 > 辅助功能 中授予权限")
+        # Local in-app fallback: monitor key events even without Accessibility permission.
+        # This ensures the switcher hotkey works when user is inside Bubble.
+        try:
+            def _local_key_handler(ev):
+                try:
+                    from .listener import SWITCHER_TRIGGER
+                    modifier_mask = (
+                        int(NSEventModifierFlagOption)
+                        | int(NSEventModifierFlagCommand)
+                        | int(NSEventModifierFlagControl)
+                        | int(NSEventModifierFlagShift)
+                    )
+                    flags = int(ev.modifierFlags()) & modifier_mask
+                    keycode = int(ev.keyCode())
+                    need_flags = SWITCHER_TRIGGER.get('flags')
+                    need_key = SWITCHER_TRIGGER.get('key')
+                    if (
+                        need_key is not None
+                        and need_flags is not None
+                        and keycode == int(need_key)
+                        and (flags & int(need_flags)) == int(need_flags)
+                    ):
+                        try:
+                            if os.environ.get('BB_KEY_DEBUG') == '1':
+                                print(f"DEBUG: SWITCHER local-monitor matched keycode={keycode} flags={flags}")
+                        except Exception:
+                            pass
+                        self.cycleActiveWindow_(None)
+                        return None  # swallow
+                except Exception:
+                    pass
+                return ev
+            # Install once
+            if not hasattr(self, '_local_key_monitor') or self._local_key_monitor is None:
+                self._local_key_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+                    NSEventMaskKeyDown, _local_key_handler
+                )
+        except Exception:
+            self._local_key_monitor = None
         # Load the custom launch trigger if the user set it.
         load_custom_launcher_trigger()
         # Set the delegate of the window to this parent application.
@@ -2037,6 +2462,20 @@ class AppDelegate(NSObject):
         self.activation_timer = None
         # Mark initialized to avoid repeating heavy setup on subsequent refreshes
         self._status_menu_initialized = True
+        # First-run flow: auto-open first window (if any), permission prompt, onboarding tips
+        try:
+            from Foundation import NSTimer
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.4, self, 'autoOpenFirstWindowIfAny:', None, False
+            )
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.8, self, 'presentPermissionsPrompt:', None, False
+            )
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                1.2, self, 'presentOnboardingHighlights:', None, False
+            )
+        except Exception:
+            pass
 
     # Logic to show the overlay, make it the key window, and focus on the typing area.
     def showWindow_(self, sender):
@@ -2187,6 +2626,16 @@ class AppDelegate(NSObject):
         except Exception as e:
             print(f"WARNING: 无法打开设置窗口: {e}")
 
+    # Debug: Show homepage tour on demand
+    def showHomepageTour_(self, sender):
+        try:
+            if self.homepage_manager:
+                self.homepage_manager.request_force_homepage_tour()
+            if self.navigation_controller:
+                self.navigation_controller.navigate_to_homepage(save_current=False)
+        except Exception as e:
+            print(f"WARNING: 无法启动主页引导: {e}")
+
     # Refresh hint when menu opens (hotkey may have changed)
     def menuWillOpen_(self, menu):
         try:
@@ -2196,6 +2645,36 @@ class AppDelegate(NSObject):
 
     # For capturing key commands while the key window (in focus).
     def keyDown_(self, event):
+        # Fallback switcher handling inside the app window (works without Accessibility permission)
+        try:
+            from .listener import SWITCHER_TRIGGER
+            modifier_mask = (
+                int(NSEventModifierFlagOption)
+                | int(NSEventModifierFlagCommand)
+                | int(NSEventModifierFlagControl)
+                | int(NSEventModifierFlagShift)
+            )
+            evt_flags = int(event.modifierFlags()) & modifier_mask
+            evt_keycode = int(event.keyCode())
+            need_flags = SWITCHER_TRIGGER.get('flags')
+            need_key = SWITCHER_TRIGGER.get('key')
+            if (
+                need_key is not None
+                and need_flags is not None
+                and evt_keycode == int(need_key)
+                and (evt_flags & int(need_flags)) == int(need_flags)
+            ):
+                # Swallow key and cycle windows/pages
+                try:
+                    if os.environ.get('BB_KEY_DEBUG') == '1':
+                        print(f"DEBUG: SWITCHER keyDown_ matched keycode={evt_keycode} flags={evt_flags}")
+                except Exception:
+                    pass
+                self.cycleActiveWindow_(None)
+                return
+        except Exception:
+            pass
+
         modifiers = event.modifierFlags()
         key_command = modifiers & NSCommandKeyMask
         key_alt = modifiers & NSAlternateKeyMask
@@ -2268,6 +2747,26 @@ class AppDelegate(NSObject):
                 # 处理AI操作消息
                 action = data.get("action") if isinstance(data, dict) else None
                 platform_id = data.get("platformId") if isinstance(data, dict) else None
+                # 主页引导阶段推进（跨页面）
+                if action == "homepageTourStage":
+                    try:
+                        self._hp_tour_stage = str(data.get("stage") or "")
+                        print(f"DEBUG: homepage tour stage -> {self._hp_tour_stage}")
+                    except Exception:
+                        self._hp_tour_stage = data.get("stage")
+                    return
+                if action == "homepageTourDone" and self.homepage_manager:
+                    try:
+                        self.homepage_manager.mark_homepage_tour_done()
+                        # 结束后清理阶段标记
+                        try:
+                            self._hp_tour_stage = None
+                            self._hide_back_button_tour_tip()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    return
                 if action == "openAI" and self.navigation_controller:
                     if self.is_multiwindow_mode:
                         # 单窗口多页面：统一走导航控制器，避免手动切换导致 UI 不同步
@@ -2658,6 +3157,77 @@ class AppDelegate(NSObject):
             if self.webview:
                 # WebView 保持全高，顶栏悬浮其上
                 self.webview.setFrame_(NSMakeRect(0, 0, content_bounds.size.width, content_bounds.size.height))
+                # 同步更新主页顶部下拉锚点位置
+                try:
+                    if getattr(self, 'last_loaded_is_homepage', False) and getattr(self, 'ai_selector', None):
+                        sel_rect = self.ai_selector.convertRect_toView_(self.ai_selector.bounds(), self.webview)
+                        x = sel_rect.origin.x
+                        y = sel_rect.origin.y
+                        w = sel_rect.size.width
+                        h = sel_rect.size.height
+                        js = f"(function(){{var a=document.getElementById('top-dropdown-anchor'); if(a){{ a.style.left='{x:.1f}px'; a.style.top='{y:.1f}px'; a.style.width='{w:.1f}px'; a.style.height='{h:.1f}px'; a.style.transform=''; }} }})();"
+                        self._js_eval(js)
+                except Exception:
+                    pass
+            # 引导提示跟随返回按钮位置
+            try:
+                if getattr(self, '_tour_back_tip_view', None) and not self._tour_back_tip_view.isHidden():
+                    tip = self._tour_back_tip_view
+                    tip_w = tip.frame().size.width
+                    tip_h = tip.frame().size.height
+                    btn_rect = self.top_bar.convertRect_toView_(self.back_button.frame(), self.root_view)
+                    cx = btn_rect.origin.x + btn_rect.size.width/2.0
+                    topbar_frame = self.top_bar.frame()
+                    y = max(0.0, topbar_frame.origin.y - tip_h - 8.0)
+                    x = max(0.0, cx - tip_w/2.0)
+                    tip.setFrame_(NSMakeRect(x, y, tip_w, tip_h))
+            except Exception:
+                pass
+            # 顶栏遮罩孔洞重新计算（圆形高亮 + 气泡区域透出）
+            try:
+                if getattr(self, '_tour_topbar_mask', None) and not self._tour_topbar_mask.isHidden():
+                    b = self.top_bar.bounds()
+                    bb = self.back_button.frame()
+                    pad = 5.0
+                    cx = bb.origin.x + bb.size.width/2.0
+                    cy = bb.origin.y + bb.size.height/2.0
+                    dia = max(bb.size.width, bb.size.height) + pad*2.0
+                    hole_x = cx - dia/2.0
+                    hole_y = cy - dia/2.0
+                    hole_w = dia
+                    hole_h = dia
+                    self._tour_topbar_mask.setFrame_(b)
+                    if getattr(self, '_tour_topbar_shape', None) is not None:
+                        from Quartz import CGPathCreateMutable, CGPathAddRect, CGPathAddEllipseInRect, CGRectMake
+                        path = CGPathCreateMutable()
+                        CGPathAddRect(path, None, CGRectMake(0, 0, b.size.width, b.size.height))
+                        try:
+                            CGPathAddEllipseInRect(path, None, CGRectMake(hole_x, hole_y, hole_w, hole_h))
+                        except Exception:
+                            CGPathAddRect(path, None, CGRectMake(hole_x, hole_y, hole_w, hole_h))
+                        # 让气泡区域也透出
+                        try:
+                            tipf = self._tour_back_tip_view.frame() if getattr(self, '_tour_back_tip_view', None) else None
+                            if tipf is not None:
+                                CGPathAddRect(path, None, CGRectMake(tipf.origin.x, tipf.origin.y, tipf.size.width, tipf.size.height))
+                        except Exception:
+                            pass
+                        self._tour_topbar_shape.setPath_(path)
+                        try:
+                            from Quartz import kCAFillRuleEvenOdd
+                            self._tour_topbar_shape.setFillRule_(kCAFillRuleEvenOdd)
+                        except Exception:
+                            self._tour_topbar_shape.setFillRule_("evenOdd")
+                        self._tour_topbar_shape.setFillColor_(NSColor.blackColor().colorWithAlphaComponent_(0.58).CGColor())
+                # 同步 Web 遮罩尺寸（顶栏以下区域）
+                if getattr(self, '_tour_web_mask', None) and not self._tour_web_mask.isHidden():
+                    b = self.window.contentView().bounds()
+                    h = b.size.height - float(self.top_bar_height)
+                    if h < 0:
+                        h = 0
+                    self._tour_web_mask.setFrame_(NSMakeRect(0, 0, b.size.width, h))
+            except Exception:
+                pass
             # 调整单窗口多页面的 WebView 布局
             try:
                 for _wid, _wv in list(getattr(self, '_pages_map', {}).items()):
@@ -3598,6 +4168,18 @@ class AppDelegate(NSObject):
             if self.last_loaded_is_homepage:
                 pad = int(self.top_bar_height + 20)
                 webView.evaluateJavaScript_completionHandler_(f"document.body && (document.body.style.paddingTop='{pad}px');", None)
+                # 定位顶部下拉框锚点，便于引导精确指向
+                try:
+                    # 将选择器 bounds 转换到 WebView 坐标
+                    sel_rect = self.ai_selector.convertRect_toView_(self.ai_selector.bounds(), self.webview)
+                    x = sel_rect.origin.x
+                    y = sel_rect.origin.y
+                    w = sel_rect.size.width
+                    h = sel_rect.size.height
+                    js = f"(function(){{var a=document.getElementById('top-dropdown-anchor'); if(a){{ a.style.left='{x:.1f}px'; a.style.top='{y:.1f}px'; a.style.width='{w:.1f}px'; a.style.height='{h:.1f}px'; a.style.transform=''; }} }})();"
+                    webView.evaluateJavaScript_completionHandler_(js, None)
+                except Exception as _e:
+                    print(f"DEBUG: 定位下拉锚失败: {_e}")
         except Exception:
             pass
         # 页面完成后隐藏骨架
@@ -3678,7 +4260,22 @@ class AppDelegate(NSObject):
                 self._skeleton_suppress_until_finish = True
             except Exception:
                 pass
-            html_content = self.homepage_manager.show_homepage()
+            try:
+                html_content = self.homepage_manager.show_homepage()
+            except Exception as e:
+                try:
+                    print(f"ERROR: Failed to render homepage: {e}")
+                except Exception:
+                    pass
+                # Minimal safe fallback to avoid white screen
+                html_content = (
+                    "<!DOCTYPE html><meta charset='utf-8'><title>Bubble</title>"
+                    "<body style=\"font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;color:#111\">"
+                    "<div style=\"max-width:720px;margin:10vh auto;text-align:center\">"
+                    "<div style=\"font-size:18px;font-weight:700;margin-bottom:8px\">Bubble Home</div>"
+                    "<div style=\"opacity:.8\">Homepage rendering encountered an error. Please try again or check logs.</div>"
+                    "</div></body>"
+                )
             self.webview.loadHTMLString_baseURL_(html_content, None)
             try:
                 print(f"DEBUG: 主页HTML长度: {len(html_content)}")
@@ -4234,6 +4831,17 @@ class AppDelegate(NSObject):
             except Exception:
                 pass
             self._load_homepage()
+            # 若为引导流程：返回主页后继续展示快捷键提示
+            try:
+                if getattr(self, '_hp_tour_stage', None) == 'awaitBackToHomepage':
+                    self._hp_tour_stage = 'awaitHotkeyTip'
+                    # 小延迟确保主页文档就绪再注入
+                    from Foundation import NSTimer
+                    NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                        0.18, self, 'showHotkeyTipAfterReturn:', None, False
+                    )
+            except Exception:
+                pass
         elif page_type == "chat" and platform_id:
             # 进入平台页
             if self.is_multiwindow_mode:
@@ -4268,6 +4876,17 @@ class AppDelegate(NSObject):
                     self._populate_ai_selector(include_home_first=False)
                 except Exception:
                     pass
+                # 引导第二步：已通过下拉进入聊天页 -> 显示原生返回按钮提示
+                try:
+                    if getattr(self, '_hp_tour_stage', None) == 'awaitDropdownSelection':
+                        self._hp_tour_stage = 'awaitBackToHomepage'
+                        # 小延迟，确保返回按钮已布局
+                        from Foundation import NSTimer
+                        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                            0.12, self, 'showBackButtonTip:', None, False
+                        )
+                except Exception:
+                    pass
                 return
             # 单页面模式：展示骨架并加载
             try:
@@ -4283,6 +4902,13 @@ class AppDelegate(NSObject):
                 self._select_ai_item(platform_id, window_id)
             except Exception:
                 pass
+            # 引导第二步已选择下拉 -> 聊天页面：提示点击返回
+            try:
+                if getattr(self, '_hp_tour_stage', None) == 'awaitDropdownSelection':
+                    self._hp_tour_stage = 'awaitBackToHomepage'
+                    self._show_back_button_tour_tip()
+            except Exception:
+                pass
 
     # 更新返回按钮显示状态
     def update_back_button_visibility(self, should_show):
@@ -4292,6 +4918,18 @@ class AppDelegate(NSObject):
                 self.back_button.setHidden_(not bool(should_show))
             if hasattr(self, 'back_button_bg') and self.back_button_bg:
                 self.back_button_bg.setHidden_(not bool(should_show))
+            # 当显示返回按钮（处于平台/聊天页）时，隐藏左上角品牌 Logo 与文字；主页显示品牌
+            show_brand = not bool(should_show)
+            try:
+                if hasattr(self, 'brand_logo') and self.brand_logo is not None:
+                    self.brand_logo.setHidden_(not show_brand)
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'brand_label') and self.brand_label is not None:
+                    self.brand_label.setHidden_(not show_brand)
+            except Exception:
+                pass
         except Exception as e:
             print(f"DEBUG: update_back_button_visibility 异常: {e}")
 
@@ -4305,3 +4943,218 @@ class AppDelegate(NSObject):
         """更新窗口标题"""
         if hasattr(self, 'window'):
             self.window.setTitle_(title)
+
+    # ---- 引导：顶部返回按钮提示（原生视图） ----
+    def _show_back_button_tour_tip(self):
+        try:
+            if not getattr(self, 'top_bar', None) or not getattr(self, 'back_button', None):
+                return
+            # 确保返回按钮可见
+            try:
+                self.update_back_button_visibility(True)
+            except Exception:
+                pass
+            from AppKit import NSTextField
+
+            # 在聊天页阶段，给 Web 内容区域加一层半透明遮罩（不覆盖顶栏）以“遮蔽 AI 页面”
+            try:
+                if getattr(self, 'root_view', None) is not None and getattr(self, 'webview', None) is not None:
+                    if not hasattr(self, '_tour_web_mask') or self._tour_web_mask is None:
+                        mv = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+                        mv.setWantsLayer_(True)
+                        try:
+                            mv.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.58).CGColor())
+                        except Exception:
+                            pass
+                        # 放在顶栏之下（紧邻其下方），确保位于所有内容 WebView 之上
+                        try:
+                            if hasattr(self.root_view, 'addSubview_positioned_relativeTo_'):
+                                self.root_view.addSubview_positioned_relativeTo_(mv, NSWindowBelow, self.top_bar)
+                            else:
+                                self.root_view.addSubview_(mv)
+                        except Exception:
+                            self.root_view.addSubview_(mv)
+                        self._tour_web_mask = mv
+                    # 尺寸：覆盖顶栏以下的区域
+                    try:
+                        b = self.window.contentView().bounds()
+                        h = b.size.height - float(self.top_bar_height)
+                        if h < 0:
+                            h = 0
+                        # 若之前叠放顺序不正确，重新放置到顶栏之下
+                        try:
+                            if hasattr(self.root_view, 'addSubview_positioned_relativeTo_'):
+                                try:
+                                    self._tour_web_mask.removeFromSuperview()
+                                except Exception:
+                                    pass
+                                self.root_view.addSubview_positioned_relativeTo_(self._tour_web_mask, NSWindowBelow, self.top_bar)
+                        except Exception:
+                            pass
+                        self._tour_web_mask.setFrame_(NSMakeRect(0, 0, b.size.width, h))
+                        self._tour_web_mask.setHidden_(False)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # 顶栏遮罩（仅留返回按钮位置透出）
+            try:
+                if not hasattr(self, '_tour_topbar_mask') or self._tour_topbar_mask is None:
+                    mv2 = NSView.alloc().initWithFrame_(self.top_bar.bounds())
+                    mv2.setWantsLayer_(True)
+                    try:
+                        from Quartz import CAShapeLayer
+                        shape = CAShapeLayer.layer()
+                        mv2.layer().addSublayer_(shape)
+                        self._tour_topbar_shape = shape
+                    except Exception:
+                        self._tour_topbar_shape = None
+                    # 添加到顶栏最高层（提示会再放在其上）
+                    try:
+                        if hasattr(self.top_bar, 'addSubview_positioned_relativeTo_'):
+                            self.top_bar.addSubview_positioned_relativeTo_(mv2, NSWindowAbove, None)
+                        else:
+                            self.top_bar.addSubview_(mv2)
+                    except Exception:
+                        self.top_bar.addSubview_(mv2)
+                    self._tour_topbar_mask = mv2
+                # 计算并绘制“洞”（圆形高亮）
+                try:
+                    b = self.top_bar.bounds()
+                    bb = self.back_button.frame()
+                    pad = 5.0
+                    # 以按钮中心为圆心，直径取按钮宽高较大者 + padding*2
+                    cx = bb.origin.x + bb.size.width/2.0
+                    cy = bb.origin.y + bb.size.height/2.0
+                    dia = max(bb.size.width, bb.size.height) + pad*2.0
+                    hole_x = cx - dia/2.0
+                    hole_y = cy - dia/2.0
+                    hole_w = dia
+                    hole_h = dia
+                    self._tour_topbar_mask.setFrame_(b)
+                    if self._tour_topbar_shape is not None:
+                        from Quartz import CGPathCreateMutable, CGPathAddRect, CGPathAddEllipseInRect, CGRectMake
+                        path = CGPathCreateMutable()
+                        CGPathAddRect(path, None, CGRectMake(0, 0, b.size.width, b.size.height))
+                        try:
+                            CGPathAddEllipseInRect(path, None, CGRectMake(hole_x, hole_y, hole_w, hole_h))
+                        except Exception:
+                            # 兜底：仍然用矩形洞
+                            CGPathAddRect(path, None, CGRectMake(hole_x, hole_y, hole_w, hole_h))
+                        try:
+                            self._tour_topbar_shape.setPath_(path)
+                            self._tour_topbar_shape.setFillColor_(NSColor.blackColor().colorWithAlphaComponent_(0.58).CGColor())
+                            try:
+                                from Quartz import kCAFillRuleEvenOdd
+                                self._tour_topbar_shape.setFillRule_(kCAFillRuleEvenOdd)
+                            except Exception:
+                                self._tour_topbar_shape.setFillRule_("evenOdd")
+                        except Exception:
+                            pass
+                    else:
+                        self._tour_topbar_mask.layer().setBackgroundColor_(NSColor.blackColor().colorWithAlphaComponent_(0.58).CGColor())
+                    self._tour_topbar_mask.setHidden_(False)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            if not hasattr(self, '_tour_back_tip_view') or self._tour_back_tip_view is None:
+                tip_h = 32.0
+                tip_w = 240.0
+                v = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, tip_w, tip_h))
+                v.setWantsLayer_(True)
+                try:
+                    # 与第一步 Web 气泡样式尽量一致：白底、圆角 12、柔和阴影
+                    v.layer().setCornerRadius_(12.0)
+                    v.layer().setBackgroundColor_(NSColor.whiteColor().CGColor())
+                    v.layer().setShadowColor_(NSColor.blackColor().colorWithAlphaComponent_(0.18).CGColor())
+                    v.layer().setShadowOpacity_(0.9)
+                    v.layer().setShadowRadius_(12.0)
+                    v.layer().setShadowOffset_(NSMakeSize(0, -1))
+                except Exception:
+                    pass
+                lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(12, 6, tip_w-24, tip_h-12))
+                lbl.setBezeled_(False); lbl.setDrawsBackground_(False); lbl.setEditable_(False); lbl.setSelectable_(False)
+                try:
+                    lbl.setTextColor_(NSColor.labelColor())
+                    lbl.setFont_(NSFont.systemFontOfSize_(13.0))
+                except Exception:
+                    pass
+                lbl.setStringValue_(self._i18n_or_default('tour.back', '点击此返回主页'))
+                v.addSubview_(lbl)
+                self._tour_back_tip_label = lbl
+                self._tour_back_tip_view = v
+                # 放到 root_view，在 Web 遮罩之上
+                try:
+                    if hasattr(self.root_view, 'addSubview_positioned_relativeTo_') and getattr(self, '_tour_web_mask', None) is not None:
+                        self.root_view.addSubview_positioned_relativeTo_(v, NSWindowAbove, self._tour_web_mask)
+                    else:
+                        self.root_view.addSubview_(v)
+                except Exception:
+                    self.root_view.addSubview_(v)
+            # 定位到高亮区域下方（水平居中于返回按钮），使用 root_view 坐标
+            try:
+                tip = self._tour_back_tip_view
+                tip_w = tip.frame().size.width
+                tip_h = tip.frame().size.height
+                btn_rect = self.top_bar.convertRect_toView_(self.back_button.frame(), self.root_view)
+                cx = btn_rect.origin.x + btn_rect.size.width/2.0
+                # 顶栏底边之下 8px
+                topbar_frame = self.top_bar.frame()
+                y = max(0.0, topbar_frame.origin.y - tip_h - 8.0)
+                x = max(0.0, cx - tip_w/2.0)
+                tip.setFrame_(NSMakeRect(x, y, tip_w, tip_h))
+                tip.setHidden_(False)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _hide_back_button_tour_tip(self):
+        try:
+            if hasattr(self, '_tour_back_tip_view') and self._tour_back_tip_view is not None:
+                self._tour_back_tip_view.setHidden_(True)
+            if hasattr(self, '_tour_topbar_mask') and self._tour_topbar_mask is not None:
+                self._tour_topbar_mask.setHidden_(True)
+            if hasattr(self, '_tour_web_mask') and self._tour_web_mask is not None:
+                self._tour_web_mask.setHidden_(True)
+        except Exception:
+            pass
+
+    def showHotkeyTipAfterReturn_(self, _):
+        try:
+            self._hide_back_button_tour_tip()
+            # 注入首页文档：展示快捷键提示（传入当前显示/隐藏快捷键），要求两次隐藏/显示后结束
+            try:
+                hotkey = self._format_launcher_hotkey()
+            except Exception:
+                hotkey = '⌘+G'
+            try:
+                import json as _json
+                hk = _json.dumps(hotkey)
+            except Exception:
+                hk = '"⌘+G"'
+            # 更稳健：轮询等待函数挂载完成（页面脚本可能尚未注入完毕）
+            js = f"""
+                (function(){{
+                    var __bb_try = 0;
+                    function __bb_go(){{
+                        try {{
+                            if (window.__bb_show_hotkey_tip) {{ window.__bb_show_hotkey_tip({hk}); return; }}
+                        }} catch(e){{}}
+                        if (__bb_try++ < 50) {{ setTimeout(__bb_go, 80); }}
+                    }}
+                    __bb_go();
+                }})();
+            """
+            self._js_eval(js)
+        except Exception:
+            pass
+
+    # NSTimer 回调：延迟展示返回按钮提示
+    def showBackButtonTip_(self, _):
+        try:
+            self._show_back_button_tour_tip()
+        except Exception:
+            pass

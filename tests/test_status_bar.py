@@ -7,8 +7,8 @@ import pytest
 @pytest.mark.skipif(platform.system().lower() != "darwin", reason="AppKit required on macOS")
 def test_status_hint_updates_on_hotkey_change(monkeypatch):
     """The status menu hint should reflect the current hotkey and update after change."""
-    from bubblebot.constants import LAUNCHER_TRIGGER
-    from bubblebot import app as app_mod
+    from bubble.constants import LAUNCHER_TRIGGER
+    from bubble import app as app_mod
 
     # Create a lightweight delegate instance
     delegate = app_mod.AppDelegate.alloc().init()
@@ -50,7 +50,7 @@ def test_status_hint_updates_on_hotkey_change(monkeypatch):
 def test_status_menu_no_legacy_items_in_codebase():
     """Ensure old menu entries are not present anymore (structural sanity)."""
     here = os.path.dirname(os.path.dirname(__file__))
-    app_path = os.path.join(here, "src", "bubblebot", "app.py")
+    app_path = os.path.join(here, "src", "bubble", "app.py")
     with open(app_path, "r", encoding="utf-8") as f:
         content = f.read()
     # Legacy entries that should not exist anymore
@@ -62,7 +62,7 @@ def test_status_menu_no_legacy_items_in_codebase():
 @pytest.mark.skipif(platform.system().lower() != "darwin", reason="AppKit required on macOS")
 def test_status_icon_updates_on_appearance(monkeypatch):
     """Status bar icon should switch between black/white based on dark mode with fallbacks."""
-    from bubblebot.app import AppDelegate
+    from bubble.app import AppDelegate
 
     # Create a lightweight AppDelegate instance (no app launch)
     delegate = AppDelegate.alloc().init()

@@ -4,7 +4,7 @@ import pytest
 
 @pytest.mark.skipif(platform.system().lower() != "darwin", reason="AppKit required on macOS")
 def test_page_threshold_toast_trigger(monkeypatch):
-    from bubblebot.app import AppDelegate
+    from bubble.app import AppDelegate
 
     delegate = AppDelegate.alloc().init()
     calls = []

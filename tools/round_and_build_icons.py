@@ -7,9 +7,9 @@ Requirements:
   - macOS iconutil in PATH
 
 Outputs:
-  - Rounded PNGs inside src/bubblebot/logo/icon.iconset/
-  - Monochrome rounded status icons: src/bubblebot/logo/logo_white.png, logo_black.png
-  - Rebuilt src/bubblebot/logo/icon.icns
+  - Rounded PNGs inside src/bubble/logo/icon.iconset/
+  - Monochrome rounded status icons: src/bubble/logo/logo_white.png, logo_black.png
+  - Rebuilt src/bubble/logo/icon.icns
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ except Exception as e:  # pragma: no cover - helpful error for local runs
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_LOGO = ROOT / "logo.png"
-ASSET_DIR = ROOT / "src" / "bubblebot" / "logo"
+ASSET_DIR = ROOT / "src" / "bubble" / "logo"
 ICONSET = ASSET_DIR / "icon.iconset"
 ICNS = ASSET_DIR / "icon.icns"
 
