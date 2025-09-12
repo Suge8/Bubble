@@ -10,12 +10,23 @@ set -euo pipefail
 #   tools/build_macos.sh --smoke        # run a brief launch smoke-test (then kill)
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Prefer the active virtualenv's Python, fallback to python3 on PATH
+if [[ -n "${VIRTUAL_ENV:-}" && -x "$VIRTUAL_ENV/bin/python" ]]; then
+  PY="$VIRTUAL_ENV/bin/python"
+else
+  PY="$(command -v python3 || true)"
+fi
+if [[ -z "$PY" ]]; then
+  echo "[!] Could not find a Python interpreter. Activate a venv or install Python 3." >&2
+  exit 1
+fi
+echo "[*] Using Python: $PY"
 APP_NAME="Bubble"
 DIST_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$ROOT_DIR/build"
 APP_PATH="$DIST_DIR/${APP_NAME}.app"
 # Read version from pyproject.toml (fallback to 0.0.0)
-VERSION=$(python3 - << 'PY'
+VERSION=$("$PY" - << 'PY'
 import sys, tomllib
 try:
     with open('pyproject.toml','rb') as f:
@@ -42,8 +53,8 @@ cd "$ROOT_DIR"
 
 if [[ "$INSTALL_DEPS" == "1" ]]; then
   echo "[*] Installing Python build dependencies..."
-  python3 -m pip install --upgrade pip wheel setuptools packaging >/dev/null
-  python3 -m pip install -r requirements.txt
+  "$PY" -m pip install --upgrade pip wheel setuptools packaging >/dev/null
+  "$PY" -m pip install -r requirements.txt
 fi
 
 if [[ "$CLEAN" == "1" ]]; then
@@ -52,7 +63,7 @@ if [[ "$CLEAN" == "1" ]]; then
 fi
 
 echo "[*] Building .app via py2app..."
-python3 setup.py py2app -O2
+"$PY" setup.py py2app -O2
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "[!] Build failed (no $APP_PATH)" >&2
